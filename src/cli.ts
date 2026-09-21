@@ -92,7 +92,14 @@ function flagValue(
 	return { value: next, consumed: 1 }
 }
 
-type InitValueKey = 'projectId' | 'displayName' | 'credsVolume' | 'stack' | 'claudeCodeVersion'
+type InitValueKey =
+	| 'projectId'
+	| 'displayName'
+	| 'credsVolume'
+	| 'stack'
+	| 'claudeCodeVersion'
+	| 'extPatchesRepo'
+	| 'extPatchesRef'
 
 const INIT_VALUE_FLAGS: Readonly<Record<string, InitValueKey>> = {
 	'--project-id': 'projectId',
@@ -100,6 +107,8 @@ const INIT_VALUE_FLAGS: Readonly<Record<string, InitValueKey>> = {
 	'--creds-volume': 'credsVolume',
 	'--stack': 'stack',
 	'--cc': 'claudeCodeVersion',
+	'--ext-patches-repo': 'extPatchesRepo',
+	'--ext-patches-ref': 'extPatchesRef',
 }
 
 async function runInit(args: readonly string[]): Promise<number> {

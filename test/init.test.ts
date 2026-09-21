@@ -319,7 +319,7 @@ test('--no-install leaves the install as the first next step', async () => {
 test('interactive: the questions come in order, the most shared volume is the default, Enter takes defaults', async () => {
 	const { dir, cleanup } = scratch()
 	try {
-		const ask = answering('', '', '', '', '', '', '')
+		const ask = answering('', '', '', '', '', '', '', '')
 		const run = await runInit(dir, {
 			yes: false,
 			input: TTY(),
@@ -337,6 +337,7 @@ test('interactive: the questions come in order, the most shared volume is the de
 			'Display name',
 			'Claude credentials volume',
 			'Claude Code line',
+			'Extension patchers repository (owner/name, empty to skip)',
 			'Proceed?',
 			'Install @meitogi/devcontainer-cli locally now (npm install)?',
 		])
@@ -353,8 +354,9 @@ test('interactive: the questions come in order, the most shared volume is the de
 test('interactive: an invalid slug is re-asked, a new volume is named, and "n" at the summary aborts cleanly', async () => {
 	const { dir, cleanup } = scratch()
 	try {
-		// stack (Enter), id (bad, then good), name (Enter), volume: option 2 = new…, then its name, cc (Enter), proceed: n
-		const ask = answering('', 'Bad Slug', 'good-slug', '', '2', 'claude-creds-team', '', 'n')
+		// stack (Enter), id (bad, then good), name (Enter), volume: option 2 = new…, then its name,
+		// cc (Enter), ext-patches repo (Enter = skip), proceed: n
+		const ask = answering('', 'Bad Slug', 'good-slug', '', '2', 'claude-creds-team', '', '', 'n')
 		const run = await runInit(dir, {
 			yes: false,
 			input: TTY(),

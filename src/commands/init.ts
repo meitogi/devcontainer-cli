@@ -24,7 +24,8 @@ import {
 	PUBLISHED_CLAUDE_CODE_VERSIONS,
 	type CredsVolume,
 } from '../lib/docker.js'
-import { readEnvFile } from '../lib/env-file.js'
+import { readEnvFile, uncommentEnvVar } from '../lib/env-file.js'
+import { readExtPatchesConfig, writeExtPatchesConfig } from '../lib/machine-config.js'
 import {
 	CLI_PACKAGE_NAME,
 	detectPackageManager,
@@ -35,7 +36,7 @@ import {
 import { defaultProjectId, isValidProjectId, titlecase } from '../lib/paths.js'
 import { isBareWin32, readHostProbe, type HostProbe } from '../lib/platform.js'
 import { run } from '../lib/proc.js'
-import { choose, confirm, PromptAbandoned, readlineAsk, text, type Ask, type PromptContext } from '../lib/prompts.js'
+import { choose, confirm, PromptAbandoned, readlineAsk, secret, text, type Ask, type PromptContext } from '../lib/prompts.js'
 import { applyPlan, buildPlan, classifyTarget, diffPlan, type ScaffoldAnswers } from '../lib/scaffold.js'
 import { CLI_NAME, CLI_VERSION } from '../lib/version.js'
 
@@ -52,12 +53,17 @@ export interface InitOptions {
 	credsVolume?: string | undefined
 	stack?: string | undefined
 	claudeCodeVersion?: string | undefined
+	/** Non-interactive ext-patches opt-in; token comes from EXT_PATCHES_TOKEN, never a flag. */
+	extPatchesRepo?: string | undefined
+	extPatchesRef?: string | undefined
 	/** Run the package manager after writing package.json (default true; `--no-install`). */
 	install?: boolean | undefined
 	/** Stream whose TTY-ness decides whether prompting is possible. */
 	input?: NodeJS.ReadableStream & { isTTY?: boolean }
 	/** The question seam — same shape as `devc initialize`. */
 	ask?: Ask
+	/** Masked-input seam for the ext-patches token; same fallback as `PromptContext.askSecret`. */
+	askSecret?: Ask
 	out?: NodeJS.WritableStream
 	err?: NodeJS.WritableStream
 	probe?: HostProbe
@@ -92,9 +98,15 @@ Options:
                              private per-project one
   --stack <id>               ${STACKS.map((stack) => stack.id).join(' | ')}
   --cc <x.y.z>               Claude Code line to pin (published: ${PUBLISHED_CLAUDE_CODE_VERSIONS.join(', ')})
+  --ext-patches-repo <owner/name>  Extension patchers repo (non-interactive opt-in)
+  --ext-patches-ref <ref>    Ref for the above (default: cc<claude-code>-r1)
   --no-install               Write package.json but do not run the package manager
   --dry-run                  Show what would be written, write nothing
   -h, --help                 Show this help
+
+Environment:
+  EXT_PATCHES_TOKEN          Token for --ext-patches-repo (never a flag — it
+                             would land in shell history)
 
 An existing .devcontainer/ is never overwritten: a tree this CLI made gets a
 per-file report and only missing files added; any other tree is refused.
@@ -161,7 +173,11 @@ export async function init(options: InitOptions): Promise<number> {
 	}
 
 	const readline = interactive && options.ask === undefined ? readlineAsk(input, out) : null
-	const context: PromptContext = { ask: options.ask ?? readline?.ask ?? (async () => ''), out }
+	const context: PromptContext = {
+		ask: options.ask ?? readline?.ask ?? (async () => ''),
+		askSecret: options.askSecret ?? readline?.askSecret,
+		out,
+	}
 	const wizard: WizardContext = { projectDir, options, context, interactive, say, err }
 
 	try {
@@ -170,12 +186,12 @@ export async function init(options: InitOptions): Promise<number> {
 		// pending — the promise never settles and the process exits 13.
 		if (state.kind === 'same') return await reportExisting(wizard)
 
-		const answers = await collectAnswers(wizard)
-		if (answers === null) {
+		const collected = await collectAnswers(wizard)
+		if (collected === null) {
 			say('Aborted — nothing written.')
 			return 0
 		}
-		return await scaffold(wizard, answers)
+		return await scaffold(wizard, collected.answers, collected.extPatches)
 	} catch (error) {
 		if (error instanceof PromptAbandoned) {
 			err.write(`devc init: ${error.message}\n`)
@@ -222,8 +238,19 @@ interface WizardContext {
 	err: NodeJS.WritableStream
 }
 
+interface ExtPatchesAnswer {
+	repo: string
+	ref: string
+	token: string
+}
+
+interface CollectedAnswers {
+	answers: ScaffoldAnswers
+	extPatches: ExtPatchesAnswer | null
+}
+
 /** The questions, in install.sh's order with the stack detection in front. Null = aborted at the summary. */
-async function collectAnswers(wizard: WizardContext): Promise<ScaffoldAnswers | null> {
+async function collectAnswers(wizard: WizardContext): Promise<CollectedAnswers | null> {
 	const { projectDir, options, context, interactive, say } = wizard
 
 	// --- 1. What is this project? --------------------------------------------
@@ -316,6 +343,9 @@ async function collectAnswers(wizard: WizardContext): Promise<ScaffoldAnswers | 
 
 	const answers: ScaffoldAnswers = { projectId, displayName, stack, credsVolume, claudeCodeVersion }
 
+	// --- 6. Extension patchers (machine-level reuse) ---------------------------
+	const extPatches = await collectExtPatches(wizard, claudeCodeVersion)
+
 	// --- Summary + confirm (summary_and_confirm) -------------------------------
 	say()
 	say('  Summary')
@@ -325,9 +355,70 @@ async function collectAnswers(wizard: WizardContext): Promise<ScaffoldAnswers | 
 	say(`    Display name  : ${displayName}`)
 	say(`    Creds volume  : ${credsVolume ?? `(private — claude-creds-${projectId}, created at first start)`}`)
 	say(`    Base image    : ${buildPlan(answers).imageRef}`)
+	if (extPatches !== null) say(`    Ext-patches   : ${extPatches.repo} @ ${extPatches.ref}`)
 	say()
 	if (interactive && !(await confirm(context, { question: 'Proceed?', defaultYes: true }))) return null
-	return answers
+	return { answers, extPatches }
+}
+
+const REPO_PATTERN = /^[\w.-]+\/[\w.-]+$/
+
+/**
+ * Repo/ref/token for the wizard's extension-patcher prompts, with
+ * machine-level reuse: the first project on a machine asks all three and
+ * offers to remember them at `~/.config/devc/ext-patches.env`; later
+ * projects get one reuse confirmation, with `ref` always recomputed for
+ * this project rather than trusted from the stored value. Non-interactive
+ * only via explicit flags — never prompted, never touches the machine
+ * config.
+ */
+async function collectExtPatches(wizard: WizardContext, claudeCodeVersion: string): Promise<ExtPatchesAnswer | null> {
+	const { options, context, interactive, say } = wizard
+	const defaultRef = `cc${claudeCodeVersion}-r1`
+
+	if (!interactive) {
+		if (options.extPatchesRepo === undefined) return null
+		return {
+			repo: options.extPatchesRepo,
+			ref: options.extPatchesRef ?? defaultRef,
+			token: process.env['EXT_PATCHES_TOKEN'] ?? '',
+		}
+	}
+
+	const machine = readExtPatchesConfig()
+	if (machine !== null) {
+		const reuse = await confirm(context, { question: `Reuse ext-patches config from ${machine.repo}?`, defaultYes: true })
+		if (reuse) return { repo: machine.repo, ref: defaultRef, token: machine.token }
+	}
+
+	say()
+	const repo = await text(context, {
+		question: 'Extension patchers repository (owner/name, empty to skip)',
+		explain: [
+			'A git repo of VS Code extension patches applied at container start.',
+			'Leave empty to skip — nothing else is asked or written for this.',
+		],
+		defaultValue: '',
+		validate: (value) => (value.length === 0 || REPO_PATTERN.test(value) ? null : 'expected owner/name'),
+	})
+	if (repo.length === 0) return null
+
+	const ref = await text(context, {
+		question: 'Ref (tag/branch)',
+		explain: ['The tag convention ext-patches-update resolves: cc<claude-code-version>-r1.'],
+		defaultValue: defaultRef,
+	})
+
+	const token = await secret(context, {
+		question: 'Access token (empty for none, ctrl-R reveals)',
+		explain: ["Lands in this project's .env either way — masking only guards the terminal echo."],
+	})
+
+	if (await confirm(context, { question: 'Remember these for your next project?', defaultYes: true })) {
+		writeExtPatchesConfig({ repo, ref, token })
+	}
+
+	return { repo, ref, token }
 }
 
 /**
@@ -381,7 +472,7 @@ async function chooseCredsVolume(wizard: WizardContext, projectId: string): Prom
 }
 
 /** State "absent": write the plan, the manifest, install, and say what comes next. */
-async function scaffold(wizard: WizardContext, answers: ScaffoldAnswers): Promise<number> {
+async function scaffold(wizard: WizardContext, answers: ScaffoldAnswers, extPatches: ExtPatchesAnswer | null): Promise<number> {
 	const { projectDir, options, context, interactive, say, err } = wizard
 	const dryRun = options.dryRun
 	const plan = buildPlan(answers)
@@ -393,6 +484,16 @@ async function scaffold(wizard: WizardContext, answers: ScaffoldAnswers): Promis
 	for (const path of result.kept) say(`    = ${path} (already there, kept)`)
 	say(`    ${result.gitignore === 'appended' ? '+' : '='} .gitignore (${result.gitignore})`)
 	for (const problem of result.symlinkProblems) err.write(`  ⚠ ${problem}\n`)
+
+	if (extPatches !== null) {
+		const envFile = join(projectDir, '.devcontainer', '.env')
+		if (!dryRun) {
+			uncommentEnvVar(envFile, 'EXT_PATCHES_REPO', extPatches.repo)
+			uncommentEnvVar(envFile, 'EXT_PATCHES_REF', extPatches.ref)
+			uncommentEnvVar(envFile, 'EXT_PATCHES_TOKEN', extPatches.token)
+		}
+		say(`    ~ .env (EXT_PATCHES_REPO/REF/TOKEN)`)
+	}
 
 	// The bootstrap manifest, so `npm install` pins this CLI for the
 	// initializeCommand to run locally from then on.

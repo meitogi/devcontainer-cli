@@ -21,8 +21,9 @@ import {
 	hasDocker,
 	volumeCreate,
 } from '../lib/docker.js'
-import { readEnvFile, setEnvVar, unsetEnvVar } from '../lib/env-file.js'
+import { readEnvFile, setEnvVar, uncommentEnvVar, unsetEnvVar } from '../lib/env-file.js'
 import { Logger } from '../lib/logger.js'
+import { readExtPatchesConfig } from '../lib/machine-config.js'
 import { spawnNotifyDaemon } from '../lib/notify-daemon.js'
 import {
 	classifyDevcontainer,
@@ -211,6 +212,9 @@ async function runInitialize(context: Context): Promise<number> {
 	// === Team defaults -> .env projection (design §5.7) ======================
 	projectTeamDefaults({ devcontainerDir, envFile, logger, dryRun })
 
+	// === Ext-patches: machine config fills only what the project left empty ==
+	applyExtPatchesConfig({ envFile, logger, dryRun })
+
 	// === Optional rebuild diagnostic (initialize.sh:602-611) =================
 	if (env['DEBUG_REBUILD_CONTEXT'] === '1' && !dryRun) {
 		dumpRebuildContext({ logger, devcontainerDir, timestamp })
@@ -394,6 +398,32 @@ function projectTeamDefaults(options: ProjectionOptions): void {
 		if (!dryRun) setEnvVar(envFile, key, value)
 		logger.log(`→ projected ${key}=${value} from customizations.stitchu-devc`)
 		logger.trace({ kind: 'decide', name: key, value, why: 'devcontainer.json team default' })
+	}
+}
+
+/**
+ * Fills EXT_PATCHES_REPO/REF/TOKEN from the machine config only where the
+ * project's `.env` left them empty; warns (never overwrites) when a
+ * project value disagrees with the machine config.
+ */
+function applyExtPatchesConfig(options: { envFile: string; logger: Logger; dryRun: boolean }): void {
+	const { envFile, logger, dryRun } = options
+	const machine = readExtPatchesConfig()
+	if (machine === null) return
+	const env = readEnvFile(envFile)
+	const pairs: readonly [string, string][] = [
+		['EXT_PATCHES_REPO', machine.repo],
+		['EXT_PATCHES_REF', machine.ref],
+		['EXT_PATCHES_TOKEN', machine.token],
+	]
+	for (const [key, value] of pairs) {
+		const existing = env[key]
+		if (existing === undefined || existing.length === 0) {
+			if (!dryRun) uncommentEnvVar(envFile, key, value)
+			logger.log(`→ filled ${key} from ~/.config/devc/ext-patches.env`)
+		} else if (existing !== value) {
+			logger.log(`⚠ ${key} in .env differs from ~/.config/devc/ext-patches.env — kept the project's value`)
+		}
 	}
 }
 

@@ -42,6 +42,12 @@ export function unsetEnvVar(file: string, key: string): void {
 	writeIfChanged(file, original, applyUnset(original, key))
 }
 
+/** File-level {@link applyUncomment} — the answer lands next to the comment documenting it. */
+export function uncommentEnvVar(file: string, key: string, value: string): void {
+	const original = existsSync(file) ? readFileSync(file, 'utf8') : ''
+	writeIfChanged(file, original, applyUncomment(original, key, value))
+}
+
 /**
  * The pure half of {@link setEnvVar}, exported for tests and for `--dry-run`.
  */
