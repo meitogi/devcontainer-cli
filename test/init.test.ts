@@ -104,7 +104,7 @@ test('--yes scaffolds the tree, the manifest, and runs the install', async () =>
 		const files = tree(dir)
 		assert.ok(files.includes('.devcontainer/devcontainer.json'))
 		assert.ok(files.includes('.devcontainer/.env'))
-		assert.ok(files.includes('.devcontainer/hooks/post-start.d/.gitkeep'))
+		assert.ok(files.includes('.devcontainer/hooks/post-start.d/README.md'))
 		assert.ok(files.includes('.claude/settings.local.json'))
 		assert.ok(files.includes('package.json'))
 		assert.ok(files.includes('.gitignore'))
