@@ -9,6 +9,12 @@
 # AND ON THIS FILE'S NAME. Renaming publish.yml breaks publishing with an opaque
 # E404 — change the npm side first. See RELEASING.md.
 #
+# This workflow STAGES; it does not publish. `npm stage publish` uploads the
+# tarball to npm's staging area and stops there. A maintainer then reviews it
+# and approves with 2FA, or rejects it — see RELEASING.md. That is why the
+# trusted publisher on npmjs.com deliberately leaves `npm publish` unticked:
+# staging is always allowed, and nothing this workflow can do is irreversible.
+#
 # Third-party actions are pinned to commit SHAs (comment = tag at pin time,
 # 2026-09-21); bump deliberately, never float.
 name: publish
@@ -19,7 +25,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Rehearse: run prepublishOnly and pack, send nothing'
+        description: 'Rehearse: run prepublishOnly and pack, stage nothing'
         type: boolean
         default: true
 
@@ -84,11 +90,14 @@ jobs:
           # that holds id-token: write.
           package-manager-cache: false
 
-      - name: npm is new enough for trusted publishing
+      # Trusted publishing needs npm >= 11.5.1; staged publishing needs
+      # >= 11.15.0. The higher floor is the binding one, since this workflow
+      # only ever stages.
+      - name: npm is new enough for staged trusted publishing
         run: |
-          have="$(npm --version)"; need="11.5.1"
+          have="$(npm --version)"; need="11.15.0"
           if [ "$(printf '%s\n%s\n' "$need" "$have" | sort -V | head -n1)" != "$need" ]; then
-            echo "::error::npm ${have} < ${need} — trusted publishing needs npm >= ${need}"
+            echo "::error::npm ${have} < ${need} — staged publishing needs npm >= ${need}"
             exit 1
           fi
           echo "node $(node --version), npm ${have}"
@@ -102,17 +111,31 @@ jobs:
       - name: build and test
         run: npm test
 
-      - name: npm publish
-        run: npm publish ${{ inputs.dry_run && '--dry-run' || '' }}
+      - name: npm stage publish
+        run: npm stage publish ${{ inputs.dry_run && '--dry-run' || '' }}
         # No NODE_AUTH_TOKEN, no --provenance: OIDC supplies the credential and
         # npm attaches the provenance attestation automatically for a public
         # package built from a public repo on a GitHub-hosted runner.
+        #
+        # This does NOT make the version live. It lands in the staging area and
+        # waits for `npm stage approve <stage-id>` (2FA) or `npm stage reject`.
 
-      - name: how to verify
+      - name: what to do next
         if: ${{ !inputs.dry_run }}
         run: |
           {
-            echo "### @meitogi/devcontainer-cli@${{ needs.guard.outputs.version }}"
+            echo "### Staged: @meitogi/devcontainer-cli@${{ needs.guard.outputs.version }}"
+            echo
+            echo "Not live yet. Review it, then approve with 2FA — or reject it."
+            echo
+            echo '```'
+            echo 'npm stage list @meitogi/devcontainer-cli'
+            echo 'npm stage view <stage-id>'
+            echo 'npm stage download <stage-id>'
+            echo 'npm stage approve <stage-id>'
+            echo '```'
+            echo
+            echo "Once approved:"
             echo
             echo '```'
             echo 'npm view @meitogi/devcontainer-cli version dist.fileCount \'

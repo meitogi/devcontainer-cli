@@ -14,7 +14,8 @@ Maintainer documentation. If you only consume the package, you want
 3. Rehearse from CI: run the
    [publish workflow](.github/workflows/publish.yml) with
    `workflow_dispatch` and `dry_run=true`. Read the file listing in the log.
-4. Tag `v<version>` and push the tag. That is the release.
+4. Tag `v<version>` and push the tag. CI then **stages** the version.
+5. Review the staged tarball and approve it with 2FA. That is the release.
 
 ```sh
 npm version 0.1.2 --no-git-tag-version
@@ -23,6 +24,34 @@ git push origin main
 gh workflow run publish.yml -f dry_run=true && gh run watch
 git tag -a v0.1.2 -m "@meitogi/devcontainer-cli 0.1.2" && git push origin v0.1.2
 ```
+
+## Staging, and why the tag is not the point of no return
+
+This workflow runs `npm stage publish`, never `npm publish`. A staged version
+sits in npm's staging area and is **not installable** — `npm view` keeps
+reporting the previous version until someone approves it.
+
+```sh
+npm stage list @meitogi/devcontainer-cli
+npm stage view <stage-id>
+npm stage download <stage-id>
+npm stage approve <stage-id>
+npm stage reject <stage-id>
+```
+
+`approve` prompts for 2FA, whether you run it in the CLI or click Approve in
+the **Staged Packages** tab on npmjs.com. `reject` throws the staged version
+away, and you can stage the same version again afterwards.
+
+That asymmetry is the whole point. A published version is permanent: `npm
+unpublish` works for 72 hours, and after that the number is burned and the next
+fix has to take a new one. A staged version costs nothing to discard. So the
+irreversible gesture is the approval, made by a human looking at the tarball —
+not a `git push` of a tag.
+
+`npm stage download` is worth actually using before approving. It hands you the
+exact bytes CI built, which is the only way to check the tarball rather than
+the repository.
 
 The workflow's `guard` job **fails on purpose** if the pushed tag is not
 `v<package.json version>`. Bumping the manifest and tagging are one gesture,
@@ -33,6 +62,8 @@ false). Useful for rehearsing and for replaying a failed run; not a way to cut
 a release.
 
 ## Verifying a release
+
+After approval:
 
 ```sh
 npm view @meitogi/devcontainer-cli version dist.fileCount dist.shasum \
@@ -72,9 +103,11 @@ change the npm side first.**
 Two more traps in that form, both of which cost a red run to discover:
 
 - the *Organization or user* field takes `meitogi`, **not** `@meitogi`;
-- *Allowed actions* must have **`npm publish`** ticked. Configurations created
-  after 2026-09-03 default to `npm stage publish` only, and the workflow's
-  plain `npm publish` is then refused.
+- *Allowed actions* deliberately leaves **`npm publish` unticked**. `npm stage
+  publish` is always allowed, so the workflow needs nothing here — and leaving
+  it unticked is what guarantees CI cannot put a version live on its own. npm's
+  own UI recommends this, and it is the reason the release gesture ends in a
+  2FA approval rather than in a tag push.
 
 Requirements, for when the pinned versions are bumped: trusted publishing needs
 **npm ≥ 11.5.1 and Node ≥ 22.14.0**. The workflow pins `node-version: '24'`
@@ -90,6 +123,11 @@ From a clean checkout of the tag, as a maintainer with 2FA:
 ```sh
 npm ci && npm publish --otp=<6-digit code>
 ```
+
+Note what this skips: it publishes directly, with no staging and no second
+look, and the tarball is built on your machine rather than on a clean runner —
+so it carries no provenance attestation. It is the break-glass route, not a
+shortcut. Prefer re-running the workflow.
 
 `npm publish` alone will answer `403 … Two-factor authentication or granular
 access token with bypass 2fa enabled is required` — that is a refusal *before*
