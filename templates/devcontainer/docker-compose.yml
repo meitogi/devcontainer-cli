@@ -53,7 +53,7 @@ services:
       - bash-history:/commandhistory
       - claude-config:/home/node/.claude
       - claude-creds:/home/node/.claude-creds
-      # Phase 3 A3: mitmproxy binary baked in image (/opt/mitmproxy/), volume holds CA only.
+      # mitmproxy binary is baked into the image (/opt/mitmproxy/) — this volume only holds the CA.
       # Mounted in both modes — empty in basic, contains mitmproxy-ca-cert.pem in strict.
       - mitmproxy:/var/lib/mitmproxy
 

@@ -5,6 +5,12 @@ Maintainer documentation. If you only consume the package, you want
 
 ## Steps
 
+0. Check `templates/` for rollout jargon before it ships — internal phase/
+   session labels ("Phase 3 A3", "Session 4") leak in from time to time and
+   read as nonsense to a project that never saw the rollout:
+   ```sh
+   grep -rniE "phase [0-9]|session [0-9]|\bD[0-9]{1,2}\b" templates/
+   ```
 1. Bump `version` in `package.json` (every change to what ships in the tarball
    = a bump; a commit that changes only CI or maintainer docs does not).
    Use `npm version <v> --no-git-tag-version` rather than editing by hand — it
