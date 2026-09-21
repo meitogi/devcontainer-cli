@@ -1,0 +1,122 @@
+# Publish @meitogi/devcontainer-cli to registry.npmjs.org.
+#
+# One npm version per pushed tag. The version comes from package.json — bump it
+# there before tagging; the `guard` job fails on purpose if the two disagree.
+#
+# Authentication is npm Trusted Publishing (OIDC): no secret lives in this
+# repository. The trust relationship is declared on npmjs.com (package →
+# Settings → Trusted publishing) and is keyed on the owner, the repository name
+# AND ON THIS FILE'S NAME. Renaming publish.yml breaks publishing with an opaque
+# E404 — change the npm side first. See RELEASING.md.
+#
+# Third-party actions are pinned to commit SHAs (comment = tag at pin time,
+# 2026-09-21); bump deliberately, never float.
+name: publish
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Rehearse: run prepublishOnly and pack, send nothing'
+        type: boolean
+        default: true
+
+# Nothing by default; each job asks for exactly what it needs.
+permissions: {}
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - id: meta
+        run: echo "version=$(jq -r '.version' package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: tag matches package.json version
+        if: github.ref_type == 'tag'
+        run: |
+          v="$(jq -r '.version' package.json)"
+          if [ "${GITHUB_REF_NAME}" != "v${v}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} != package.json version v${v} — bump package.json first"
+            exit 1
+          fi
+
+      # Both OIDC and provenance key on repository.url. A mismatch is a
+      # publish-time E404 or a silently missing attestation — neither is worth
+      # debugging twice.
+      - name: repository field names this repo
+        run: |
+          url="$(jq -r '.repository.url' package.json)"
+          want="git+https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ "$url" != "$want" ]; then
+            echo "::error::package.json repository.url is '${url}', expected '${want}'"
+            exit 1
+          fi
+          if [ "$(jq -r '.repository.directory // "none"' package.json)" != "none" ]; then
+            echo "::error::package.json repository.directory is a monorepo leftover — remove the key"
+            exit 1
+          fi
+
+  publish:
+    needs: guard
+    runs-on: ubuntu-latest        # trusted publishing requires a cloud-hosted runner
+    permissions:
+      contents: read
+      id-token: write             # mint the OIDC token npm exchanges for a publish token
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # Literal, never node-version-file: setup-node >= 6.3.0 reads
+          # engines.node from package.json, and this package declares >=18 —
+          # which ships npm 10.8.2 and cannot do trusted publishing at all.
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          # Never cache in a release build: a poisoned cache can reach the job
+          # that holds id-token: write.
+          package-manager-cache: false
+
+      - name: npm is new enough for trusted publishing
+        run: |
+          have="$(npm --version)"; need="11.5.1"
+          if [ "$(printf '%s\n%s\n' "$need" "$have" | sort -V | head -n1)" != "$need" ]; then
+            echo "::error::npm ${have} < ${need} — trusted publishing needs npm >= ${need}"
+            exit 1
+          fi
+          echo "node $(node --version), npm ${have}"
+
+      - run: npm ci
+
+      # Builds dist/ (gitignored, so a fresh clone has none) and runs the suite.
+      # prepublishOnly runs it a second time — that duplication is deliberate,
+      # see RELEASING.md. Expect the node:test trailer to show 2 skipped
+      # (template-drift, which has no monorepo template to compare against here).
+      - name: build and test
+        run: npm test
+
+      - name: npm publish
+        run: npm publish ${{ inputs.dry_run && '--dry-run' || '' }}
+        # No NODE_AUTH_TOKEN, no --provenance: OIDC supplies the credential and
+        # npm attaches the provenance attestation automatically for a public
+        # package built from a public repo on a GitHub-hosted runner.
+
+      - name: how to verify
+        if: ${{ !inputs.dry_run }}
+        run: |
+          {
+            echo "### @meitogi/devcontainer-cli@${{ needs.guard.outputs.version }}"
+            echo
+            echo '```'
+            echo 'npm view @meitogi/devcontainer-cli version dist.fileCount \'
+            echo '  dist.shasum repository.url \'
+            echo '  dist.attestations.provenance.predicateType'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

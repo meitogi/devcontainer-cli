@@ -1,0 +1,79 @@
+# =============================================================================
+# Local firewall overrides — starter pack
+# =============================================================================
+# Copy to `domains.local.txt` (gitignored), then uncomment what you need.
+# Accepts the same extended syntax as `domains.txt` (see the header of
+# `domains.txt` for the 5 supported formats + the `!disable` override).
+#
+# Precedence : domains.local.txt > policy.d/ > domains.txt > defaults.
+# A line that mentions a host already present in baseline REDEFINES it
+# (the paths committed for that host are wiped). To extend without wiping,
+# don't use this layer — write `policy.local.d/<host>.yaml` instead.
+#
+# At boot, `init-firewall.sh` logs a WARN for every override applied.
+# Machine-readable trace : `runtime._overrides_applied` in `policy.compiled.yaml`.
+# =============================================================================
+
+
+# ─── Disable telemetry (test offline / debug network) ────────────────────────
+# Disables POSTs to statsig + sentry. Claude Code still works without them,
+# but error reports won't reach Anthropic.
+#
+# !disable *.statsig.com
+# !disable *.sentry.io
+
+
+# ─── Project example template (copy-paste, edit per project) ─────────────────
+# Hosts of the project hosted in this devcontainer (not Claude Code itself).
+# Replace example.com with your project's main domain.
+#
+# example.com
+# api.example.com
+# static.example.com
+
+
+# ─── AI alternatives (test concurrent models from Claude Code) ───────────────
+# Sub-agents that consume other providers (OpenRouter, Kimi, etc.).
+#
+# [GET,POST] *.opencode.ai
+# [GET,POST] *.kimi.com
+# [GET,POST] openrouter.ai
+# huggingface.co
+# *.hf.space
+
+
+# ─── Doc sites (read public documentation) ───────────────────────────────────
+# Uncomment by group depending on what you're coding.
+#
+# developer.mozilla.org                  # MDN Web Docs (HTML/CSS/JS)
+# www.php.net                            # PHP manual
+# nodejs.org                             # Node.js docs
+# docs.python.org                        # Python stdlib
+# pkg.go.dev                             # Go packages
+
+
+# ─── Package registries (other ecosystems) ───────────────────────────────────
+# Widens the scope beyond the @anthropic-ai/* path committed in baseline.
+#
+# [GET,HEAD] registry.npmjs.org          # ⚠️ REDEFINE — wipes the /@anthropic-ai/* path filter
+# [GET,HEAD] repo.packagist.org          # Composer (PHP)
+# [GET,HEAD] files.pythonhosted.org      # pip
+# [GET,HEAD] pypi.org                    # pip index (JSON API)
+# [GET,HEAD] crates.io                   # Rust
+# [GET,HEAD] static.crates.io            # Rust tarballs
+
+
+# ─── GitHub public (orgs other than anthropics) ──────────────────────────────
+# ⚠️ This section EXTENDS the committed GitHub surface (which restricts to
+# /anthropics/*). Full REDEFINE on the hosts → wipes baseline paths.
+#
+# [GET,POST] github.com                  # ⚠️ wipes baseline /anthropics/*
+# [GET] api.github.com                   # ⚠️ wipes baseline /repos/anthropics/*
+# [GET] codeload.github.com
+# [GET] raw.githubusercontent.com
+
+
+# ─── Search ──────────────────────────────────────────────────────────────────
+#
+# [GET] duckduckgo.com
+# [GET] html.duckduckgo.com

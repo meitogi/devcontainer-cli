@@ -1,0 +1,38 @@
+{
+  "name": "@meitogi/devcontainer-cli",
+  "version": "0.1.1",
+  "description": "Host-side control plane for the meitogi devcontainer sandbox — init wizard, initialize, update, doctor.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Kévin ʘ‿ʘ <cmoi@kevledev.fr>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meitogi/devcontainer-cli.git"
+  },
+  "bin": {
+    "devc": "bin/devc.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin/",
+    "dist/src/",
+    "templates/",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -p . --watch",
+    "test": "tsc -p . && node --test dist/test/*.test.js",
+    "prepublishOnly": "npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.130",
+    "typescript": "^7.0.2"
+  }
+}

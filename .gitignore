@@ -1,0 +1,12 @@
+# tsc output. `npm run build` and `npm test` regenerate it; the npm tarball
+# ships dist/src/ through package.json#files, never through git.
+/dist/
+
+node_modules/
+
+# `npm pack` by hand lands here. The suite packs with --pack-destination into
+# a tmpdir, so this only catches manual runs.
+*.tgz
+
+.DS_Store
+*.log

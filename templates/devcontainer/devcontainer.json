@@ -1,0 +1,114 @@
+{
+  "name": "{{PROJECT_DISPLAY_NAME}} — Claude Code Sandbox",
+  "dockerComposeFile": "docker-compose.yml",
+  "overrideCommand": false,
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        // anthropic.claude-code is pre-baked in Dockerfile.base via VSIX
+        // download (v2.1-2). The pin here is the runtime fallback : if the
+        // build-time VSIX download failed (Marketplace down / version retired),
+        // VS Code installs it at container start through the firewall-allowed
+        // Marketplace path. Keep the version in sync with CLAUDE_CODE_VERSION
+        // in .devcontainer/.env — bumping one without the other will trigger
+        // a redownload of ~250 MB per container start.
+        // anthropic.claude-code is DELIBERATELY NOT listed. The base image
+        // bakes the patched extension and registers it in extensions.json —
+        // a pin here is the one path by which an unpatched Marketplace copy
+        // can arrive. The 42-claude-ext-pin-warn post-start hook banners if
+        // a pin reappears or the baked extension is missing.
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "eamodio.gitlens",
+        "barnim.markdown-code-copy-button"
+      ],
+      "settings": {
+        "extensions.autoUpdate": false,
+        "extensions.autoCheckUpdates": false,
+        "editor.formatOnSave": false,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": "explicit"
+        },
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "terminal.integrated.profiles.linux": {
+          "bash": {
+            "path": "bash",
+            "icon": "terminal-bash"
+          },
+          "zsh": {
+            "path": "zsh"
+          }
+        },
+        "window.title": "{{PROJECT_DISPLAY_NAME}} [${localWorkspaceFolderBasename}] - Claude Code Sandbox - ${activeEditorShort}",
+        "claudeCode.preferredLocation": "primary",
+        "claudeCode.disableLoginPrompt": true,
+        "claudeCode.disableWebviewAuthRedirect": true
+      }
+    },
+    "stitchu-devc": {
+      // Fragments listed here (path relative to hooks dir, e.g.
+      // "post-start.d/25-firewall-mode-banner.sh") are skipped by devc-hook.
+      // Empty by default — every fragment runs. See bin/devc-hook.
+      "disabledHooks": []
+    }
+  },
+  "remoteUser": "node",
+  "containerEnv": {
+    "NODE_OPTIONS": "--max-old-space-size=4096 --use-openssl-ca",
+    // UTF-8 locale — Dockerfile.base purges all locale packs except en/en_US/C
+    // (~175 MB saved), so only glibc's built-in C.UTF-8 is available. Without
+    // this, LANG is empty → LC_CTYPE=POSIX → zsh's ZLE renders every non-ASCII
+    // byte as `?` (em-dash « — » → « ??? », idem accents/arrows).
+    "LANG": "C.UTF-8",
+    // CLAUDE_CONFIG_DIR is intentionally NOT pinned here — `.env` (via
+    // docker-compose env_file) is the single source of truth so
+    // host-helpers/claude-switch can toggle local↔cloud by editing one file.
+    // containerEnv applies AFTER env_file in the compose chain and would
+    // override .env (verified live : with the hardcoded line, claude-switch
+    // local had no effect — PID 1's env stayed at .claude). When commented
+    // out in .env, the var is unset and Claude defaults to ~/.claude
+    // (the cloud path). When uncommented, it points at ~/.claude-local for
+    // mode isolation. See knowledge/ollama-local.md § Audit & observability.
+    "GH_CONFIG_DIR": "/home/node/.claude/gh",
+    "POWERLEVEL9K_DISABLE_GITSTATUS": "true",
+    // HOST_WORKSPACE_PATH — real host path of the workspace, injected by
+    // VS Code at parse time (${localWorkspaceFolder} is resolved before the
+    // container starts). Read by .devcontainer/skills/tokens/lib/project-id.sh
+    // so the Stop-hook logs the true host path even when running inside the
+    // container. Zero docker socket exposure, zero /proc/mountinfo parsing.
+    "HOST_WORKSPACE_PATH": "${localWorkspaceFolder}"
+  },
+  // Host-side pre-container step. Cold, npx fetches the newest {{DEVC_RANGE}}
+  // release; once `npm install` has run at the project root, the same line
+  // resolves the locally installed, lockfile-pinned copy with no registry
+  // round-trip. The range spec matters: a bare package name makes npx check
+  // the registry on every start and prefer a newer cached version.
+  "initializeCommand": "npx --yes {{DEVC_PACKAGE}}@{{DEVC_RANGE}} initialize",
+  // devc-hook is pre-installed in the base image at /usr/local/bin/. It reads
+  // hooks/<phase>.d/*.sh from /opt/devcontainer/base/ (image) + .devcontainer/hooks/
+  // (project overlay), dedups by filename (overlay wins), and runs them in
+  // numeric-prefix order. Disable individual fragments via
+  // customizations.stitchu-devc.disabledHooks above.
+  "onCreateCommand": "devc-hook on-create",
+  "postCreateCommand": "devc-hook post-create",
+  "postStartCommand": "devc-hook post-start",
+  // Port forwarding policy.
+  // Default (otherPortsAttributes: ignore) — VS Code does not
+  // auto-forward any port. Detected LISTEN sockets show up in the
+  // "Ports" panel under "Not Forwarded"; activate manually via
+  // right-click → "Forward Port".
+  //
+  // To whitelist a port for auto-forward, add an entry to
+  // portsAttributes with onAutoForward = "silent" (no toast) or
+  // "notify" (with toast). Vite example (commented — uncomment and
+  // adapt to the project's dev server):
+  //
+  //   "portsAttributes": {
+  //     "5173": { "label": "vite", "onAutoForward": "silent" }
+  //   },
+  "otherPortsAttributes": { "onAutoForward": "ignore" },
+  "waitFor": "postStartCommand"
+}

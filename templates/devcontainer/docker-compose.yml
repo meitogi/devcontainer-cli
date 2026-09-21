@@ -1,0 +1,109 @@
+name: ${DC_PROJECT:-{{PROJECT_ID}}}-claude-code
+
+services:
+  app:
+    build:
+      context: .
+      # Slim project layer — FROM the published GHCR base image; compose
+      # pulls it, nothing is built locally. BASE_IMAGE in .env is both the
+      # version pin and the rollback knob (see Dockerfile header).
+      dockerfile: Dockerfile
+      args:
+        # The two published lines: 1.2.0-cc2.1.272 (default), 1.2.0-cc2.1.220.
+        BASE_IMAGE: ${BASE_IMAGE:-ghcr.io/meitogi/devcontainer-sandbox:1.2.0-cc2.1.272}
+        # Whether the build bakes firewall/domains.local.txt and
+        # firewall/policy.local.d/ into the image. Hardened default is 0 :
+        # those files are gitignored and container-writable, so a rebuild
+        # would otherwise be a silent path from "a postinstall edited a file"
+        # to "the firewall allows more". Personal opt-in through .env only.
+        FIREWALL_ALLOW_LOCAL_AT_REBUILD: ${FIREWALL_ALLOW_LOCAL_AT_REBUILD:-0}
+    # Local Ollama backend (cf. .devcontainer/knowledge/ollama-local.md). Two aliases for
+    # the same host gateway IP — the routing difference comes from NO_PROXY :
+    #   ollama.internal  ∉ NO_PROXY  → routed via HTTP_PROXY (mitmproxy audit)
+    #   ollama.local     ∈ NO_PROXY  → direct connect (debug only, no audit)
+    # Switching audit ↔ bypass is a single line edit in .env, no rebuild needed.
+    #
+    # extra_hosts removed in favour of a CNAME chain inside dnsmasq (see
+    # init-firewall.sh — dynamic resolution of host.docker.internal at boot
+    # then `cname=ollama.{internal,local},host.docker.internal`). That keeps
+    # the DNS allowlist in charge of ipset population — extra_hosts injected
+    # entries into /etc/hosts which nsswitch consults before dnsmasq, bypassing
+    # the firewall pipeline and producing a confusing ❌ in test-firewall.sh.
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      # IPv6 hole closure (defense in depth):
+      # 1) sysctl disable — kills v6 stack on the listed interfaces (no
+      #    auto-config, no link-local). `eth0` can't be set here (Docker
+      #    rejects per-interface sysctls for netdriver-created ifaces) —
+      #    the network-driver_opts below handles it.
+      # 2) ip6tables DROP rules in init-firewall.sh as belt+suspenders.
+      - net.ipv6.conf.all.disable_ipv6=1
+      - net.ipv6.conf.default.disable_ipv6=1
+      - net.ipv6.conf.lo.disable_ipv6=1
+    env_file:
+      - path: .env
+        required: false
+    networks:
+      - default
+    volumes:
+      - ..:/workspace:delegated
+      - ./vscode-settings.jsonc:/workspace/.vscode/settings.json:bind
+      - bash-history:/commandhistory
+      - claude-config:/home/node/.claude
+      - claude-creds:/home/node/.claude-creds
+      # Phase 3 A3: mitmproxy binary baked in image (/opt/mitmproxy/), volume holds CA only.
+      # Mounted in both modes — empty in basic, contains mitmproxy-ca-cert.pem in strict.
+      - mitmproxy:/var/lib/mitmproxy
+
+  # UniClaudeProxy sidecar — translates Anthropic Messages ⇄ Ollama-native and
+  # converts <think> blocks into Anthropic-spec `thinking` content blocks so
+  # Claude Code stops hanging on reasoning models (qwen3, deepseek-r1, …).
+  # Reached as `claude-bridge:9223` from `app` (Docker DNS registers the peer
+  # name) via mitmproxy audit (policy.d/claude-bridge.yaml), or directly via
+  # `claude-bridge.local:9223` for the NO_PROXY .local bypass (debug only).
+  # Lifecycle : starts with `docker compose up` ; manual control through
+  # .devcontainer/host-helpers/claude-bridge {up|down|restart|status|logs}.
+  # Image built from claude-bridge/Dockerfile : apt+clone+pip baked as cached
+  # layers (boot <10 s after first build). HEALTHCHECK + CMD live in the
+  # Dockerfile.
+  claude-bridge:
+    # Disabled by default via profile — start manually with
+    #   docker compose --profile bridge up -d claude-bridge
+    # or through .devcontainer/host-helpers/claude-bridge up.
+    profiles: [bridge]
+    build:
+      context: ./claude-bridge
+      dockerfile: Dockerfile
+    image: uniclaudeproxy:local
+    restart: unless-stopped
+    extra_hosts:
+      # host-gateway → Mac host loopback (where Ollama runs on :11434).
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+    volumes:
+      # Bootstrapped by initialize.sh on the host before compose runs
+      # (cp config.example.json → config.json if absent). Mounted at
+      # /app/config.json (CWD of the proxy process) — its load_config()
+      # reads `config.json` relative to CWD (app/config.py).
+      - ./claude-bridge/config.json:/app/config.json:ro
+
+networks:
+  default:
+    driver_opts:
+      # Per-interface IPv6 disable for eth0 (created by the netdriver).
+      # `IFNAME` is replaced by Docker with the actual interface name.
+      com.docker.network.endpoint.sysctls: net.ipv6.conf.IFNAME.disable_ipv6=1
+
+volumes:
+  bash-history:
+    name: claude-code-bashhistory-${DC_PROJECT:-{{PROJECT_ID}}}
+  claude-config:
+    name: claude-code-config-${DC_PROJECT:-{{PROJECT_ID}}}
+  claude-creds:
+    name: ${CLAUDE_CREDS_VOLUME:-claude-creds-${DC_PROJECT:-{{PROJECT_ID}}}}
+    external: true
+  mitmproxy:
+    name: mitmproxy-${DC_PROJECT:-{{PROJECT_ID}}}

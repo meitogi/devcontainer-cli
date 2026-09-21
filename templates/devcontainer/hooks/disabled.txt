@@ -1,0 +1,29 @@
+# disabled.txt — lifecycle fragments this project does NOT want to run
+#
+# Format: one `<phase>.d/<fragment>.sh` per line. Comments: # at start of line
+# or inline. Blank lines ignored. Same conventions as the firewall files.
+#
+# `devc-hook --dry-run <phase>` lists what would run, with the layer each
+# fragment came from:
+#   devc-hook post-start --dry-run
+#
+# A fragment marked `@required true` (the firewall bring-up, the credentials
+# sync) is REFUSED here: listing it prints a warning and runs it anyway. To
+# switch one off deliberately, prefix it with `!` — an explicit opt-in, so it
+# cannot happen by copy-paste:
+#
+#   !post-start.d/20-firewall-reinit.sh
+#
+# The three layers each have their own file and the lists are unioned:
+#   /opt/devcontainer/base/hooks/disabled.txt   the image
+#   /opt/devcontainer/ext/hooks/disabled.txt    a Dockerfile that FROMs it
+#   .devcontainer/hooks/disabled.txt            this file
+#
+# DEPRECATED alias, still read: customizations.stitchu-devc.disabledHooks in
+# devcontainer.json. Prefer this file — devcontainer.json is JSONC, and its
+# list is worth exactly as much as the JSONC parser that reads it.
+#
+# Examples (uncomment to apply):
+
+# post-start.d/45-claude-update-probe.sh
+# post-start.d/50-scan-deps-banner.sh

@@ -1,0 +1,52 @@
+# zshrc.local.example — per-dev overrides template.
+#
+# To use : copy this file to .devcontainer/zshrc.local and edit.
+# That file is gitignored, persists with the workspace across container
+# rebuilds, and is sourced AFTER zshrc-base (so you can override
+# anything set by the team baseline).
+#
+#   cp .devcontainer/zshrc.local.example .devcontainer/zshrc.local
+
+# === Change the theme ===
+# Browse themes : https://github.com/ohmyzsh/ohmyzsh/wiki/Themes
+# The theme is set BEFORE OMZ loads by zshrc-base, so to override here
+# you need to re-load OMZ.
+#
+# ZSH_THEME="eastwood"
+# source $ZSH/oh-my-zsh.sh
+
+# === Personal aliases ===
+# alias ll='ls -al'
+# alias vi=vim
+# alias g=git
+
+# === Port helpers ===
+# alias lsport='ss -tunlp | grep '
+# killport() {
+#   local port="$1"
+#   while [ -z "$port" ]; do
+#     read -p "What port to kill? " port
+#   done
+#   fuser -k "$port/tcp"
+# }
+
+# === Per-dev plugin install (persists in .devcontainer/.zsh-custom/) ===
+# Workflow :
+#   1. Clone into $ZSH_CUSTOM (which points to .devcontainer/.zsh-custom)
+#   2. Source the plugin script here
+#
+# Example — zsh-z (autojump-like) :
+#
+# if [ ! -d "$ZSH_CUSTOM/plugins/zsh-z" ]; then
+#   git clone --depth=1 https://github.com/agkozak/zsh-z "$ZSH_CUSTOM/plugins/zsh-z"
+# fi
+# source "$ZSH_CUSTOM/plugins/zsh-z/zsh-z.plugin.zsh"
+#
+# Note : adding to plugins=() does NOT work here — OMZ is already
+# loaded by the time this file is sourced. Source the plugin file
+# directly (as above), or move the plugins= line to before OMZ loads
+# (would require editing zshrc-base, which is team-wide).
+
+# === Personal env vars ===
+# export EDITOR=vim
+# export LESS='-FRX'

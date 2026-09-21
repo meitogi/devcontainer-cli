@@ -1,0 +1,21 @@
+# Python bytecode — direct cause of SHA drift on claude/vscode-ext-patchs/.
+# Without this exclusion, COPY claude/vscode-ext-patchs/ embarks the local
+# .pyc into the layer → different SHA across machines/projects → derived
+# images orphaned at next base rebuild.
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# Security — never in an image
+.env
+.env.*
+
+# Local logs
+*.log
+logs/
+
+# Firewall bake output — regenerated inside the build. Keeping it out of the
+# context means a stale local copy can never reach the image, and the bake
+# stage's cache key does not move every time someone rebuilds locally.
+firewall/effective/
+firewall/baked-at

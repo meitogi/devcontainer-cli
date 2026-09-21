@@ -1,0 +1,27 @@
+# disabled.txt — skills this project does NOT want installed
+#
+# Format: one skill DIRECTORY name per line. Comments: # at start of line or
+# inline. Blank lines ignored. Same conventions as the firewall files.
+#
+# The key is the directory, not the slash command: some skills are hooks-only
+# (notify-queue, session-gap) and have no command at all, so a command name
+# could never reach them. Listing a skill means BOTH: its `*.skill.md` is not
+# installed as a command, and its `hooks.json` is not merged into
+# ~/.claude/settings.json. A command or hook left by an earlier boot is
+# withdrawn — those live in a volume that outlives the image.
+#
+# There is no `!` opt-in here: unlike a lifecycle fragment, a skill has no
+# `@required` to override.
+#
+# The three layers each have their own file and the lists are unioned:
+#   /opt/devcontainer/base/skills/disabled.txt   the image
+#   /opt/devcontainer/ext/skills/disabled.txt    a Dockerfile that FROMs it
+#   .devcontainer/skills/disabled.txt            this file
+#
+# To REPLACE a baked skill rather than remove it, ship a file of the same name
+# under .devcontainer/skills/<name>/ — the project layer wins.
+#
+# Examples (uncomment to apply):
+
+# notify-queue
+# session-gap

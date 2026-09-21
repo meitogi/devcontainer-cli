@@ -1,0 +1,98 @@
+{
+	// ─────────────────────────────────────────────────────────────
+	// Docker FS overflow guard — DISABLED BY DEFAULT
+	// ─────────────────────────────────────────────────────────────
+	// Uncomment ONE tier below based on how much Docker Desktop's
+	// virtual FS (VirtioFS/gRPCFS) is suffering. Tiers are cumulative:
+	// TIER 2 assumes TIER 1 is on, TIER 3 assumes TIER 1 + 2.
+	//
+	// TIER 1 — LOWER
+	//   Excludes the noisy dirs from file watcher + search. GitLens,
+	//   git auto-refresh, SCM panel stay fully active.
+	//   Use when: workspace is dense but Docker FS only occasionally
+	//   spins; VSCode feels sluggish on save/search.
+	//
+	// TIER 2 — MEDIUM
+	//   Adds: kills git auto-fetch/refresh, auto-repo detection, gutter
+	//   decorations, GitLens auto-blame. SCM panel still visible but
+	//   no longer polls / walks the tree. `git.untrackedChanges: hidden`
+	//   reduces `git status -uall` walks — NOT fully (see microsoft/
+	//   vscode#131020) but enough in practice.
+	//   Use when: opening a file or the devcontainer boot makes Docker
+	//   FS choke; container CPU stays high at idle.
+	//
+	// TIER 3 — EXTREME (fatal for VSCode Git UI)
+	//   Adds: `git.enabled: false`. Kills the entire VSCode Git
+	//   extension. No SCM panel, no gutter diff, no GitLens (depends
+	//   on git.enabled). Manual `git` in a terminal is 100 % unaffected.
+	//   Use when: Docker FS still crashes at devcontainer boot even
+	//   with TIER 2 applied.
+	//
+	// If you have ONE identifiable dense directory, also uncomment the
+	// "YOUR_DENSE_DIR" line in TIER 1 (benefits all tiers).
+	//
+	// After editing: Reload Window (Cmd/Ctrl+Shift+P → "Reload Window").
+	// Bind-mount → no rebuild needed.
+	// ─────────────────────────────────────────────────────────────
+
+	// ─── TIER 1 (lower) ──────────────────────────────────────────
+	//
+	// "files.watcherExclude": {
+	// 	"**/.git/objects/**": true,
+	// 	"**/.git/subtree-cache/**": true,
+	// 	"**/node_modules/**": true,
+	// 	"**/vendor/**": true,
+	// 	"**/dist/**": true,
+	// 	"**/build/**": true,
+	// 	"**/.next/**": true,
+	// 	"**/.cache/**": true,
+	// 	"**/coverage/**": true,
+	// 	"**/.turbo/**": true,
+	// 	"**/target/**": true,
+	// 	"**/__pycache__/**": true,
+	// 	"**/.venv/**": true
+	// 	// ,"**/YOUR_DENSE_DIR/**": true
+	// },
+	// "search.exclude": {
+	// 	"**/node_modules": true,
+	// 	"**/vendor": true,
+	// 	"**/dist": true,
+	// 	"**/build": true,
+	// 	"**/.next": true,
+	// 	"**/coverage": true,
+	// 	"**/target": true,
+	// 	"**/__pycache__": true,
+	// 	"**/.venv": true,
+	// 	"**/*.tar.gz": true,
+	// 	"**/*.tar": true,
+	// 	"**/*.zip": true
+	// 	// ,"**/YOUR_DENSE_DIR": true
+	// },
+
+	// ─── TIER 2 (medium) — needs TIER 1 above ────────────────────
+	//
+	// "git.autofetch": false,
+	// "git.autorefresh": false,
+	// "git.decorations.enabled": false,
+	// "git.untrackedChanges": "hidden",
+	// "git.autoRepositoryDetection": false,
+	// "git.repositoryScanMaxDepth": 1,
+	// "gitlens.currentLine.enabled": false,
+	// "gitlens.codeLens.enabled": false,
+	// "gitlens.statusBar.enabled": false,
+
+	// ─── TIER 3 (extreme / fatal) — needs TIER 1 + 2 above ───────
+	//
+	// "git.enabled": false,
+	//
+	// ─────────────────────────────────────────────────────────────
+
+	"claudeCode.preferredLocation": "primary",
+	// Squares off the model + Remote Control pills (5px radius, 2px 8px
+	// padding, .85em) so they match the footer buttons beside them.
+	// Needs Reload Window.
+	"claudeCode.fixStylePills": true,
+	// Our own model badge in the footer (2.1.258+ only — older bundles always
+	// show it). true swaps the stock model pill for our badge. Needs Reload Window.
+	"claudeCode.modelBadgeFooter": false
+}
