@@ -23,7 +23,7 @@ import {
 } from '../lib/docker.js'
 import { readEnvFile, setEnvVar, uncommentEnvVar, unsetEnvVar } from '../lib/env-file.js'
 import { Logger } from '../lib/logger.js'
-import { readExtPatchesConfig } from '../lib/machine-config.js'
+import { readExtPatchesConfig, type ExtPatchesConfig } from '../lib/machine-config.js'
 import { spawnNotifyDaemon } from '../lib/notify-daemon.js'
 import {
 	classifyDevcontainer,
@@ -401,14 +401,19 @@ function projectTeamDefaults(options: ProjectionOptions): void {
 	}
 }
 
+const PLACEHOLDERS = new Set(['<change-me>', 'change-me'])
+function isPlaceholder(value: string): boolean {
+	return PLACEHOLDERS.has(value.trim().toLowerCase())
+}
+
 /**
  * Fills EXT_PATCHES_REPO/REF/TOKEN from the machine config only where the
  * project's `.env` left them empty; warns (never overwrites) when a
  * project value disagrees with the machine config.
  */
-function applyExtPatchesConfig(options: { envFile: string; logger: Logger; dryRun: boolean }): void {
+export function applyExtPatchesConfig(options: { envFile: string; logger: Logger; dryRun: boolean; machine?: ExtPatchesConfig | null }): void {
 	const { envFile, logger, dryRun } = options
-	const machine = readExtPatchesConfig()
+	const machine = options.machine === undefined ? readExtPatchesConfig() : options.machine
 	if (machine === null) return
 	const env = readEnvFile(envFile)
 	const pairs: readonly [string, string][] = [
@@ -417,8 +422,12 @@ function applyExtPatchesConfig(options: { envFile: string; logger: Logger; dryRu
 		['EXT_PATCHES_TOKEN', machine.token],
 	]
 	for (const [key, value] of pairs) {
+		// An empty machine value (a ref left auto) fills nothing and disputes nothing.
+		if (value.length === 0) continue
 		const existing = env[key]
-		if (existing === undefined || existing.length === 0) {
+		// `<change-me>` is the placeholder .env.example ships so the line exists
+		// to be filled: it counts as empty here, and the hook treats it the same.
+		if (existing === undefined || existing.length === 0 || isPlaceholder(existing)) {
 			if (!dryRun) uncommentEnvVar(envFile, key, value)
 			logger.log(`→ filled ${key} from ~/.config/devc/ext-patches.env`)
 		} else if (existing !== value) {

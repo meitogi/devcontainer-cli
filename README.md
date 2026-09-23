@@ -31,16 +31,16 @@ separately:
 
 | Artefact | Source | Distributed via |
 |---|---|---|
-| the **image** | [`meitogi/devcontainer-sandbox`](https://github.com/meitogi/devcontainer-sandbox), tagged `v1.2.0` | `ghcr.io/meitogi/devcontainer-sandbox:<base>-cc<claude-code>` |
+| the **image** | [`meitogi/devcontainer-sandbox`](https://github.com/meitogi/devcontainer-sandbox), tagged `v1.4.0` | `ghcr.io/meitogi/devcontainer-sandbox:<base>-cc<claude-code>` |
 | the **CLI** | this repo, `meitogi/devcontainer-cli` | npm, `@meitogi/devcontainer-cli` |
 
 Hooks, skills, knowledge and the firewall machinery all live in the image,
 not in what `devc init` writes — see
-[EXTENDING.md](https://github.com/meitogi/devcontainer-sandbox/blob/v1.2.0/EXTENDING.md)
+[EXTENDING.md](https://github.com/meitogi/devcontainer-sandbox/blob/v1.4.0/EXTENDING.md)
 and the per-stack Dockerfile blocks:
-[`stacks/php.md`](https://github.com/meitogi/devcontainer-sandbox/blob/v1.2.0/stacks/php.md),
-[`stacks/android.md`](https://github.com/meitogi/devcontainer-sandbox/blob/v1.2.0/stacks/android.md),
-[`stacks/android-capacitor.md`](https://github.com/meitogi/devcontainer-sandbox/blob/v1.2.0/stacks/android-capacitor.md).
+[`stacks/php.md`](https://github.com/meitogi/devcontainer-sandbox/blob/v1.4.0/stacks/php.md),
+[`stacks/android.md`](https://github.com/meitogi/devcontainer-sandbox/blob/v1.4.0/stacks/android.md),
+[`stacks/android-capacitor.md`](https://github.com/meitogi/devcontainer-sandbox/blob/v1.4.0/stacks/android-capacitor.md).
 
 ## `devc init`
 
@@ -56,7 +56,7 @@ guess the stack, then asks — saying what each answer is used for:
 
 1. **Stack** — Node.js needs nothing; PHP, Android and Capacitor point at the
    documented Dockerfile blocks in the base repo's
-   [`stacks/`](https://github.com/meitogi/devcontainer-sandbox/blob/v1.2.0/stacks/)
+   [`stacks/`](https://github.com/meitogi/devcontainer-sandbox/blob/v1.4.0/stacks/)
    (see [What this scaffolds](#what-this-scaffolds) above).
 2. **Project id** — `DC_PROJECT`: the compose project name and the prefix of
    the project's volumes.

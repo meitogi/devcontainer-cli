@@ -23,6 +23,7 @@
 // upstream — at `npx`, before this package is even fetched.
 
 import { appendFileSync, existsSync, mkdirSync, openSync, closeSync, readFileSync, rmSync } from 'node:fs'
+import { readEnvFile } from './env-file.js'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import type { Logger } from './logger.js'
@@ -89,7 +90,14 @@ async function spawnNotifyDaemonUnguarded(options: NotifyDaemonOptions): Promise
 	// consumers have initialised.
 	rmSync(startupFile, { force: true })
 
-	const newPid = launchDetached(entrypoint, projectDir, logFile)
+	// The daemon reads NOTIFY_CHANNELS, NOTIFY_SOUND, NOTIFY_DISCORD_WEBHOOK_URL…
+	// from its environment, and initialize.sh gave it the whole .env through
+	// `set -a; source "$ENV_FILE"` (initialize.sh:115). Without this the daemon
+	// booted with NOTIFY_CHANNELS unset — `all`, so the opt-in `notify` binary
+	// never came up and the osascript fallback fired instead. .env wins over
+	// the host environment, as `source` did.
+	const env = { ...process.env, ...readEnvFile(join(devcontainerDir, '.env')) }
+	const newPid = launchDetached(entrypoint, projectDir, logFile, env)
 	if (newPid === null) {
 		logger.log('⚠ Notify daemon : spawn failed — skipping')
 		return
@@ -149,12 +157,13 @@ async function spawnNotifyDaemonUnguarded(options: NotifyDaemonOptions): Promise
  * instead. `notify/lib/launcher-watch.js` already walks up the tree, so this is
  * flagged for host verification rather than worked around blind.
  */
-function launchDetached(entrypoint: string, cwd: string, logFile: string): number | null {
+function launchDetached(entrypoint: string, cwd: string, logFile: string, env: NodeJS.ProcessEnv): number | null {
 	let fd: number | null = null
 	try {
 		fd = openSync(logFile, 'a')
 		const child = spawn(process.execPath, [entrypoint, `--launcher-pid=${process.ppid}`], {
 			cwd,
+			env,
 			detached: true,
 			stdio: ['ignore', fd, fd],
 		})

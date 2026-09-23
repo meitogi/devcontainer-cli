@@ -172,7 +172,7 @@ test('interactive: a filled-in repo asks ref and token, writes .env, and remembe
 		assert.equal(run.code, 0, run.err)
 		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
 		assert.equal(env['EXT_PATCHES_REPO'], 'acme/patches')
-		assert.match(env['EXT_PATCHES_REF'] as string, /^cc.+-r1$/)
+		assert.equal(env['EXT_PATCHES_REF'], undefined, 'Enter on the ref question leaves it auto: the line stays commented')
 		assert.equal(env['EXT_PATCHES_TOKEN'], 'tok-123')
 		const saved = readExtPatchesConfig()
 		assert.equal(saved?.repo, 'acme/patches')

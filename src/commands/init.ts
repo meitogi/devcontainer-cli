@@ -24,7 +24,7 @@ import {
 	PUBLISHED_CLAUDE_CODE_VERSIONS,
 	type CredsVolume,
 } from '../lib/docker.js'
-import { readEnvFile, uncommentEnvVar } from '../lib/env-file.js'
+import { readEnvFile, uncommentEnvVar, unsetEnvVar } from '../lib/env-file.js'
 import { readExtPatchesConfig, writeExtPatchesConfig } from '../lib/machine-config.js'
 import {
 	CLI_PACKAGE_NAME,
@@ -355,7 +355,7 @@ async function collectAnswers(wizard: WizardContext): Promise<CollectedAnswers |
 	say(`    Display name  : ${displayName}`)
 	say(`    Creds volume  : ${credsVolume ?? `(private — claude-creds-${projectId}, created at first start)`}`)
 	say(`    Base image    : ${buildPlan(answers).imageRef}`)
-	if (extPatches !== null) say(`    Ext-patches   : ${extPatches.repo} @ ${extPatches.ref}`)
+	if (extPatches !== null) say(`    Ext-patches   : ${extPatches.repo} @ ${extPatches.ref === '' ? 'auto' : extPatches.ref}`)
 	say()
 	if (interactive && !(await confirm(context, { question: 'Proceed?', defaultYes: true }))) return null
 	return { answers, extPatches }
@@ -374,7 +374,10 @@ const REPO_PATTERN = /^[\w.-]+\/[\w.-]+$/
  */
 async function collectExtPatches(wizard: WizardContext, claudeCodeVersion: string): Promise<ExtPatchesAnswer | null> {
 	const { options, context, interactive, say } = wizard
-	const defaultRef = `cc${claudeCodeVersion}-r1`
+	// Empty = auto: the hook resolves the newest tag cut for the Claude Code
+	// version the container runs (cc<version>-r<n>). A pin is the exception.
+	const defaultRef = ''
+	void claudeCodeVersion
 
 	if (!interactive) {
 		if (options.extPatchesRepo === undefined) return null
@@ -404,8 +407,8 @@ async function collectExtPatches(wizard: WizardContext, claudeCodeVersion: strin
 	if (repo.length === 0) return null
 
 	const ref = await text(context, {
-		question: 'Ref (tag/branch)',
-		explain: ['The tag convention ext-patches-update resolves: cc<claude-code-version>-r1.'],
+		question: 'Ref (empty = auto)',
+		explain: ['Empty: the newest tag cut for this Claude Code version, cc<version>-r<n>, resolved at boot.', 'A tag or a commit SHA freezes a set instead.'],
 		defaultValue: defaultRef,
 	})
 
@@ -489,10 +492,20 @@ async function scaffold(wizard: WizardContext, answers: ScaffoldAnswers, extPatc
 		const envFile = join(projectDir, '.devcontainer', '.env')
 		if (!dryRun) {
 			uncommentEnvVar(envFile, 'EXT_PATCHES_REPO', extPatches.repo)
-			uncommentEnvVar(envFile, 'EXT_PATCHES_REF', extPatches.ref)
+			// Auto stays the documented, commented line: an empty live value would
+			// read as a pin to nothing.
+			if (extPatches.ref !== '') uncommentEnvVar(envFile, 'EXT_PATCHES_REF', extPatches.ref)
 			uncommentEnvVar(envFile, 'EXT_PATCHES_TOKEN', extPatches.token)
 		}
 		say(`    ~ .env (EXT_PATCHES_REPO/REF/TOKEN)`)
+	} else if (!dryRun) {
+		// The template ships EXT_PATCHES_REPO and the <change-me> token LIVE, so a
+		// clone knows what to fill in. A project that declined patchers gets
+		// neither line in its .env: the hook would otherwise say "placeholder"
+		// at every boot about a feature nobody asked for.
+		const envFile = join(projectDir, '.devcontainer', '.env')
+		unsetEnvVar(envFile, 'EXT_PATCHES_REPO')
+		unsetEnvVar(envFile, 'EXT_PATCHES_TOKEN')
 	}
 
 	// The bootstrap manifest, so `npm install` pins this CLI for the

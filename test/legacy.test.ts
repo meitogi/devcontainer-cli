@@ -140,3 +140,12 @@ test('inventoryLegacy reads the lifecycle lines, the FROM, the loader and .env â
 		cleanup()
 	}
 })
+
+test('the claude/ note says the image ships no patcher (4.1i), not the reverse', () => {
+	// The three real trees carry v2 copies of the shared patchers under
+	// claude/vscode-ext-patchs/; ext-patches-sync merges local patchers over
+	// the pinned set, so the note has to send them away, not call them shipped.
+	const note = LEGACY_LAYOUT['claude']?.note ?? ''
+	assert.match(note, /the image ships no patcher/)
+	assert.doesNotMatch(note, /ship in the image/)
+})

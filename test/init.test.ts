@@ -282,7 +282,7 @@ test('flags override the defaults and reach the files', async () => {
 		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
 		assert.equal(env['DC_PROJECT'], 'custom-id')
 		assert.equal(env['CLAUDE_CREDS_VOLUME'], undefined)
-		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:1.2.0-cc2.1.220')
+		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:1.4.0-cc2.1.220')
 		assert.equal(readDevcontainerJson(join(dir, '.devcontainer', 'devcontainer.json'))?.['name'], 'Custom Name — Claude Code Sandbox')
 		assert.match(readFileSync(join(dir, '.devcontainer', 'claude', 'CLAUDE-project.md'), 'utf8'), /Default stack\*\* : PHP/)
 		assert.match(run.out, /stacks\/php\.md/)

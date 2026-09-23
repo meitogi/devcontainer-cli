@@ -129,11 +129,11 @@ export const LEGACY_LAYOUT: Readonly<Record<string, LayoutEntry>> = {
 	},
 	'claude': {
 		category: 'config',
-		note: 'CLAUDE-*.md stay and are read; the template patchers under vscode-ext-patchs/ ship in the image and your own are still read from here; scripts/, sync-creds.sh, outbound-tester.js are yours',
+		note: 'CLAUDE-*.md stay and are read; the image ships no patcher — anything under vscode-ext-patchs/ is yours and is merged over the EXT_PATCHES_* set at boot, so v2 copies of the shared patchers must go; scripts/, sync-creds.sh, outbound-tester.js are yours',
 	},
 	'skills': {
 		category: 'config',
-		note: 'your own skill directories stay and resolve as the project layer; the template skills ship in the image; sync-skills.sh was the v2 single-layer loader — remove it with step 6: the published image lines still prefer a workspace loader, which would install your skills alone and drop the baked ones',
+		note: 'your own skill directories stay and resolve as the project layer; the template skills ship in the image; sync-skills.sh was the v2 single-layer loader — remove it with step 6: the 1.2.0 image lines still prefer a workspace loader (1.3.0 does not), which would install your skills alone and drop the baked ones',
 	},
 	// --- shipped by the image ---
 	'Dockerfile.base': { category: 'image', note: 'the local lineage ends with the switch; removing it is what makes this CLI see a v3 tree' },
