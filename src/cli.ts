@@ -1,6 +1,6 @@
 // Argument parsing and subcommand dispatch.
 //
-// Hand-rolled rather than pulled from a library: the surface is two real
+// Hand-rolled rather than pulled from a library: the surface is three real
 // commands with a handful of flags, and a zero-dependency package is easier to
 // audit and faster to `npx` than one that fetches an argument parser to read
 // `--dry-run`.
@@ -12,6 +12,7 @@
 
 import { init, INIT_HELP } from './commands/init.js'
 import { initialize, INITIALIZE_HELP } from './commands/initialize.js'
+import { migrate, MIGRATE_HELP } from './commands/migrate.js'
 import { runStub, STUB_COMMANDS } from './commands/stubs.js'
 import { installFailureHandlers, Logger } from './lib/logger.js'
 import { PathResolutionError } from './lib/paths.js'
@@ -34,6 +35,7 @@ Usage:
 Commands:
   init [dir]                 Scaffold a .devcontainer/ into a project (wizard)
   initialize                 Host-side pre-container setup (initializeCommand)
+  migrate [dir]              Report what a tree made by install.sh needs to move to v3
 ${STUB_COMMANDS.map((stub) => `  ${stub.name.padEnd(26)} ${stub.summary} (not implemented)`).join('\n')}
 
 Options:
@@ -65,6 +67,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 
 	if (first === 'init') return runInit(rest)
 	if (first === 'initialize') return runInitialize(rest)
+	if (first === 'migrate') return runMigrate(rest)
 
 	const stub = STUB_COMMANDS.find((candidate) => candidate.name === first)
 	if (stub !== undefined) {
@@ -201,4 +204,24 @@ async function runInitialize(args: readonly string[]): Promise<number> {
 		}
 		throw error
 	}
+}
+
+function runMigrate(args: readonly string[]): number {
+	let targetDir: string | undefined
+	for (const arg of args) {
+		if (arg === '--help' || arg === '-h') {
+			process.stdout.write(MIGRATE_HELP)
+			return EXIT_OK
+		}
+		if (arg.startsWith('-')) {
+			process.stderr.write(`devc migrate: unknown option "${arg}"\n\n${MIGRATE_HELP}`)
+			return EXIT_USAGE
+		}
+		if (targetDir !== undefined) {
+			process.stderr.write(`devc migrate: unexpected argument "${arg}" (one directory at most)\n`)
+			return EXIT_USAGE
+		}
+		targetDir = arg
+	}
+	return migrate({ cwd: process.cwd(), targetDir })
 }

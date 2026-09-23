@@ -88,7 +88,38 @@ devc init [dir] [--yes] [--project-id <slug>] [--display-name <name>]
 An existing `.devcontainer/` is never overwritten. A tree this CLI scaffolded
 gets a per-file report and only its missing files added; a tree made by
 `install.sh` (v1/v2) or by another tool is refused with a message saying what
-was found. Migration is a separate command, not available in this version.
+was found. For an `install.sh` tree the message points at `devc migrate`.
+
+## `devc migrate`
+
+```
+npx --yes @meitogi/devcontainer-cli@0.x migrate [dir]
+```
+
+The report a tree made by `install.sh` gets — and nothing else. It reads
+`.devcontainer/`, names what it found (the `.configured-setup` values, the
+`Dockerfile` lineage, the `initializeCommand` and lifecycle lines, the v2
+skills loader), sorts every top-level entry by what becomes of it after the
+switch (`config` read in place, `image` now shipped by the base image,
+`pending` with no v3 home yet, `retired`, `runtime`, `yours`), and prints the
+checklist with this project's own values filled in. Exit 0 once the report is
+printed; 1 when there is nothing to migrate, saying what was found instead.
+
+It writes nothing, and no flag makes it write. Measured on three real v2 trees
+before it was built: there is no pristine baseline to diff against (`install.sh`
+kept no manifest, and the template moved on since each install), the three
+files the switch must change are the three most hand-edited, and each tree
+carries subsystems the v3 scaffold has no slot for. A command that rewrote such
+a tree would have to guess which edits are yours. So the switch is a short
+checklist of edits git can show and revert, and once it is done — the tree
+builds on the published image and carries the `customizations.stitchu-devc`
+block — `devc init` recognises it and adds the missing files.
+
+The bash entry point survives the switch if you want it to: the shim at
+`templates/v3/project/initialize.sh` in the devcontainer-tools repo replaces
+the body of a v2 `initialize.sh` with an `exec` of the `npx` line above, so
+`devcontainer.json`'s `initializeCommand` need not change. Add the CLI as a
+root devDependency so that `npx` resolves the local copy offline.
 
 ## `devc initialize`
 

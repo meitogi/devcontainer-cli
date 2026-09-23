@@ -16,11 +16,13 @@ function devc(...args: string[]): { status: number; stdout: string; stderr: stri
 	return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr }
 }
 
-test('--help lists init as a real command and the two stubs as not implemented', () => {
+test('--help lists init and migrate as real commands and the two stubs as not implemented', () => {
 	const { status, stdout } = devc('--help')
 	assert.equal(status, 0)
 	assert.match(stdout, /^  init \[dir\] +Scaffold/m)
 	assert.doesNotMatch(stdout, /init.*not implemented/)
+	assert.match(stdout, /^  migrate \[dir\] +Report/m)
+	assert.doesNotMatch(stdout, /migrate.*not implemented/)
 	assert.match(stdout, /update .*\(not implemented\)/)
 	assert.match(stdout, /@meitogi\/devcontainer-cli v0\./)
 })
@@ -44,4 +46,13 @@ test('the stubs still exit 1', () => {
 	assert.equal(devc('update').status, 1)
 	assert.equal(devc('doctor').status, 1)
 	assert.equal(devc('doctor', '--help').status, 0)
+})
+
+test('migrate --help exits 0; a bad flag, a stray argument and a missing directory exit 2', () => {
+	assert.equal(devc('migrate', '--help').status, 0)
+	const bad = devc('migrate', '--bogus')
+	assert.equal(bad.status, 2)
+	assert.match(bad.stderr, /unknown option "--bogus"/)
+	assert.equal(devc('migrate', 'a', 'b').status, 2)
+	assert.equal(devc('migrate', '/nonexistent-dir-for-devc-test').status, 2)
 })

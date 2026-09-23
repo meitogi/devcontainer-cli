@@ -27,6 +27,7 @@ import { stackInfo, type StackId } from './detect-stack.js'
 import { readDevcontainerJson } from './devcontainer-json.js'
 import { BASE_IMAGE_REPOSITORY, baseImageRef, DEFAULT_CLAUDE_CODE_VERSION } from './docker.js'
 import { applyUncomment } from './env-file.js'
+import { detectLegacy } from './legacy.js'
 import { render, type TemplateValues } from './template.js'
 import { CLI_NAME, majorRange, PACKAGE_ROOT } from './version.js'
 
@@ -182,28 +183,22 @@ export type TargetState =
 	/** Something else — refuse, say what was found. */
 	| { kind: 'different'; found: string; detail: string[] }
 
-const MARKER_VERSION = /^VERSION="?([0-9]+)/m
-
 /**
- * Decide before anything is written. Negatives first: a `stitchu-devc` block
- * is not proof of a v3 tree (the v2-shaped dockerbase template carries one
- * too, and v2 users were told to add it), so the install.sh fingerprints
- * are checked before the positive test.
+ * Decide before anything is written. Negatives first: the install.sh
+ * fingerprints (`legacy.ts`) are checked before the positive test, so a tree
+ * that is v2 by lineage is refused even if it has since grown a v3-looking
+ * layout. Measured on three real v2 trees: none carries a `stitchu-devc`
+ * block, so that block alone would have told them apart — but the order costs
+ * nothing and reads as the guarantee it is.
  */
 export function classifyTarget(projectDir: string): TargetState {
 	const dc = join(projectDir, '.devcontainer')
 	const different = (found: string, detail: string[] = []): TargetState => ({ kind: 'different', found, detail })
 
-	if (existsSync(join(dc, 'Dockerfile.base'))) {
-		return different('a v2 layout made by install.sh (Dockerfile.base is present)', [
-			'This CLI does not migrate a v2 tree; "devc migrate" is not available in this version.',
-		])
-	}
-	const marker = join(dc, '.configured-setup')
-	if (existsSync(marker)) {
-		const major = MARKER_VERSION.exec(readFileSync(marker, 'utf8'))?.[1] ?? '?'
-		return different(`a v${major} layout made by install.sh (.configured-setup is present)`, [
-			'This CLI does not migrate it; "devc migrate" is not available in this version.',
+	const legacy = detectLegacy(projectDir)
+	if (legacy !== null) {
+		return different(legacy.found, [
+			'Run "devc migrate" for the report and the checklist; this CLI writes nothing into a tree install.sh made.',
 		])
 	}
 	if (existsSync(join(projectDir, '.devcontainer.json'))) {

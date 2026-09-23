@@ -235,6 +235,9 @@ test('classifyTarget: install.sh trees are refused by their fingerprints, before
 		const v2 = classifyTarget(dir)
 		assert.equal(v2.kind, 'different')
 		assert.match(v2.kind === 'different' ? v2.found : '', /v2 layout made by install\.sh/)
+		// The refusal names the command that exists for this, not one that does not.
+		assert.match(v2.kind === 'different' ? v2.detail.join('\n') : '', /^Run "devc migrate" for the report and the checklist/)
+		assert.doesNotMatch(v2.kind === 'different' ? v2.detail.join('\n') : '', /not available/)
 		rmSync(join(dc, '.configured-setup'))
 		writeFileSync(join(dc, 'Dockerfile.base'), 'FROM node\n', 'utf8')
 		const base = classifyTarget(dir)
