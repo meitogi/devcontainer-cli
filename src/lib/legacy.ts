@@ -129,11 +129,11 @@ export const LEGACY_LAYOUT: Readonly<Record<string, LayoutEntry>> = {
 	},
 	'claude': {
 		category: 'config',
-		note: 'CLAUDE-*.md stay and are read; the image ships no patcher — anything under vscode-ext-patchs/ is yours and is merged over the EXT_PATCHES_* set at boot, so v2 copies of the shared patchers must go; scripts/, sync-creds.sh, outbound-tester.js are yours',
+		note: 'CLAUDE-*.md stay and are read; the image ships no patcher — anything under vscode-ext-patchs/ is yours and is merged over the EXT_PATCHES_* set at boot, so v2 copies of the shared patchers must go; scripts/ and outbound-tester.js are yours; sync-creds.sh is byte-identical to the image\'s /usr/local/bin/sync-creds and every hook that calls it falls back there, so a v3 tree drops it',
 	},
 	'skills': {
 		category: 'config',
-		note: 'your own skill directories stay and resolve as the project layer; the template skills ship in the image; sync-skills.sh was the v2 single-layer loader — remove it with step 6: the 1.2.0 image lines still prefer a workspace loader (1.3.0 does not), which would install your skills alone and drop the baked ones',
+		note: 'your own skill directories stay and resolve as the project layer; the image bakes nine of the v2 template skills (diagram, notify-queue, prepare-plan, prepare-pr, prepare-stack, session-gap, tokens, visual-loop, watch-log) and a project copy of one of those shadows the baked one — remove those nine; floating-perms, hours.local, master-review.local, prepare-research and scan-deps are NOT baked and stay yours; sync-skills.sh was the v2 single-layer loader — remove it with step 6: image lines before 1.3.0 still prefer a workspace loader, which would install your skills alone and drop the baked ones',
 	},
 	// --- shipped by the image ---
 	'Dockerfile.base': { category: 'image', note: 'the local lineage ends with the switch; removing it is what makes this CLI see a v3 tree' },
@@ -155,20 +155,20 @@ export const LEGACY_LAYOUT: Readonly<Record<string, LayoutEntry>> = {
 	// --- no v3 home yet ---
 	'notify': { category: 'pending', note: 'the notifier ships as its own binary later' },
 	'claude-bridge': { category: 'pending', note: 'its compose service stays yours' },
-	'host-helpers': { category: 'pending' },
+	'host-helpers': { category: 'pending', note: 'four of them belong to the local-base-image era and nothing replaces them — analyze-base-image, diag-base-image-sharing, rebuild-base-image, verify-slim-base; watch-log-cleanup is inlined in the image\'s own hook, so a v3 tree drops it too; the rest stays yours' },
 	'scripts': { category: 'pending' },
-	'tests': { category: 'pending' },
 	// --- retired ---
 	'initialize': { category: 'retired', note: 'notify-daemon.sh and rebuild-debug.sh are ported into the CLI' },
-	'firewall-mode.sh': { category: 'retired', note: 'edit firewall/default-mode and rebuild — no v3 script yet, and the image banner still names this one' },
+	'firewall-mode.sh': { category: 'retired', note: 'edit firewall/default-mode and rebuild — no v3 script yet; the image banner names the file since 1.4.1' },
 	'diag-ollama-local.sh': { category: 'retired' },
+	'tests': { category: 'retired', note: 'the v2 suites test the local base image and its install.sh; the published image carries its own, run from its repo' },
 	'.gitignore-root': { category: 'retired', note: 'install.sh appended it to the root .gitignore; devc init appends its own fragment' },
-	// --- docs: the template wrote them, the project may have edited them ---
-	'README.md': { category: 'yours', note: 'template docs' },
-	'RUNBOOK.md': { category: 'yours', note: 'template docs' },
-	'SECURITY.md': { category: 'yours', note: 'template docs' },
-	'RESEARCH.md': { category: 'yours', note: 'template docs' },
-	'HOW-TO-CAPACITOR-PLUGIN.md': { category: 'yours', note: 'template docs' },
+	// --- docs: the v2 template wrote them; a v3 tree does not carry them ---
+	'README.md': { category: 'retired', note: 'v2 template docs — they describe the local base image' },
+	'RUNBOOK.md': { category: 'retired', note: 'v2 template docs' },
+	'SECURITY.md': { category: 'retired', note: 'v2 template docs' },
+	'RESEARCH.md': { category: 'retired', note: 'v2 template docs' },
+	'HOW-TO-CAPACITOR-PLUGIN.md': { category: 'retired', note: 'v2 template docs — stacks/android-capacitor.md in the base repo replaces it' },
 	// --- runtime ---
 	'.configured-setup': { category: 'runtime', note: 'install.sh\'s marker; removing it is part of the switch' },
 	'.configured-auth': { category: 'runtime' },

@@ -17,10 +17,10 @@ import { hasCommand, runCapture } from './proc.js'
  * (`cc-versions.json`, tag scheme `<base-version>-cc<cc-version>`); this
  * fallback must name a version that repo publishes.
  */
-export const DEFAULT_CLAUDE_CODE_VERSION = '2.1.272'
+export const DEFAULT_CLAUDE_CODE_VERSION = '2.1.280'
 
 /** Base-image version the scaffold pins; bumps with the base repo's releases. */
-export const DEFAULT_BASE_VERSION = '1.4.0'
+export const DEFAULT_BASE_VERSION = '1.4.1'
 
 /**
  * The Claude Code versions the base repo currently publishes an image for —
@@ -28,7 +28,7 @@ export const DEFAULT_BASE_VERSION = '1.4.0'
  * value is a warning, not a CLI release: a new pair upstream must not require
  * a new CLI to be scaffolded against.
  */
-export const PUBLISHED_CLAUDE_CODE_VERSIONS: readonly string[] = ['2.1.220', '2.1.272']
+export const PUBLISHED_CLAUDE_CODE_VERSIONS: readonly string[] = ['2.1.220', '2.1.272', '2.1.280']
 
 export const BASE_IMAGE_REPOSITORY = 'ghcr.io/meitogi/devcontainer-sandbox'
 

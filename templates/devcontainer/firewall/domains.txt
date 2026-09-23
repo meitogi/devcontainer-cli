@@ -58,7 +58,7 @@
 # :11434 ; `ollama.internal` resolves to the host gateway. Requires
 # CLAUDE_CODE_FIREWALL_ALLOWED=host:11434 in .env, and the L7 policy :
 # copy policy.local.d.example/ollama.internal.yaml into policy.d/ (committed)
-# or policy.local.d/ (personal). See knowledge/ollama-local.md.
+# or policy.local.d/ (personal). See /opt/devcontainer/base/knowledge/ollama-local.md.
 #
 #[POST] ollama.internal                 # Ollama local backend (Anthropic Messages compat)
 #  /v1/messages                         #   chat completion (max 32MB via policy)

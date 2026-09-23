@@ -9,15 +9,16 @@ services:
       # version pin and the rollback knob (see Dockerfile header).
       dockerfile: Dockerfile
       args:
-        # The two published lines: 1.4.0-cc2.1.272 (default), 1.4.0-cc2.1.220.
-        BASE_IMAGE: ${BASE_IMAGE:-ghcr.io/meitogi/devcontainer-sandbox:1.4.0-cc2.1.272}
+        # The three published lines: 1.4.1-cc2.1.280 (default), 1.4.1-cc2.1.272,
+        # 1.4.1-cc2.1.220.
+        BASE_IMAGE: ${BASE_IMAGE:-ghcr.io/meitogi/devcontainer-sandbox:1.4.1-cc2.1.280}
         # Whether the build bakes firewall/domains.local.txt and
         # firewall/policy.local.d/ into the image. Hardened default is 0 :
         # those files are gitignored and container-writable, so a rebuild
         # would otherwise be a silent path from "a postinstall edited a file"
         # to "the firewall allows more". Personal opt-in through .env only.
         FIREWALL_ALLOW_LOCAL_AT_REBUILD: ${FIREWALL_ALLOW_LOCAL_AT_REBUILD:-0}
-    # Local Ollama backend (cf. .devcontainer/knowledge/ollama-local.md). Two aliases for
+    # Local Ollama backend (cf. /opt/devcontainer/base/knowledge/ollama-local.md). Two aliases for
     # the same host gateway IP — the routing difference comes from NO_PROXY :
     #   ollama.internal  ∉ NO_PROXY  → routed via HTTP_PROXY (mitmproxy audit)
     #   ollama.local     ∈ NO_PROXY  → direct connect (debug only, no audit)

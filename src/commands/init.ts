@@ -99,7 +99,7 @@ Options:
   --stack <id>               ${STACKS.map((stack) => stack.id).join(' | ')}
   --cc <x.y.z>               Claude Code line to pin (published: ${PUBLISHED_CLAUDE_CODE_VERSIONS.join(', ')})
   --ext-patches-repo <owner/name>  Extension patchers repo (non-interactive opt-in)
-  --ext-patches-ref <ref>    Ref for the above (default: cc<claude-code>-r1)
+  --ext-patches-ref <ref>    Ref for the above (default: empty = auto)
   --no-install               Write package.json but do not run the package manager
   --dry-run                  Show what would be written, write nothing
   -h, --help                 Show this help

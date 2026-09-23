@@ -7,13 +7,6 @@
   "customizations": {
     "vscode": {
       "extensions": [
-        // anthropic.claude-code is pre-baked in Dockerfile.base via VSIX
-        // download (v2.1-2). The pin here is the runtime fallback : if the
-        // build-time VSIX download failed (Marketplace down / version retired),
-        // VS Code installs it at container start through the firewall-allowed
-        // Marketplace path. Keep the version in sync with CLAUDE_CODE_VERSION
-        // in .devcontainer/.env — bumping one without the other will trigger
-        // a redownload of ~250 MB per container start.
         // anthropic.claude-code is DELIBERATELY NOT listed. The base image
         // bakes the patched extension and registers it in extensions.json —
         // a pin here is the one path by which an unpatched Marketplace copy
@@ -71,7 +64,7 @@
     // local had no effect — PID 1's env stayed at .claude). When commented
     // out in .env, the var is unset and Claude defaults to ~/.claude
     // (the cloud path). When uncommented, it points at ~/.claude-local for
-    // mode isolation. See knowledge/ollama-local.md § Audit & observability.
+    // mode isolation. See /opt/devcontainer/base/knowledge/ollama-local.md § Audit & observability.
     "GH_CONFIG_DIR": "/home/node/.claude/gh",
     "POWERLEVEL9K_DISABLE_GITSTATUS": "true",
     // HOST_WORKSPACE_PATH — real host path of the workspace, injected by

@@ -94,4 +94,6 @@ the running dnsmasq / ipset / mitmproxy. The runtime config in
 - The only real verification path is **rebuilding the devcontainer**.
 - Never claim « tested by recompile » without a rebuild.
 
-See `knowledge/firewall.md` for the init flow and compile-policy modes.
+See `/opt/devcontainer/base/knowledge/firewall.md` for the init flow and
+compile-policy modes. A v3 tree carries no `.devcontainer/knowledge/` — the
+base image ships those seven sheets.

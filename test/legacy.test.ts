@@ -84,15 +84,15 @@ test(
 const REAL_TREES: Record<string, { entries: string[]; yours: string[] }> = {
 	dogfood: {
 		entries: `.DS_Store .configured-auth .configured-claude-mode .configured-setup .dockerignore .env .env.bak-4.3 .env.example .gitignore .gitignore-root .state-backup .wtfcmd.yaml .zsh-custom Dockerfile Dockerfile.AndroidMin Dockerfile.AndroidStd Dockerfile.CapacitorAndroidMin Dockerfile.CapacitorAndroidStd Dockerfile.base HOW-TO-CAPACITOR-PLUGIN.md LESSONS.local.md LESSONS.md README.md RESEARCH.md RUNBOOK.md SECURITY-AUDIT-2026-05.md SECURITY.md _archive cache claude claude-bridge devcontainer.json diag-ollama-local.sh docker-compose.yml firewall firewall-mode.sh host-helpers init-firewall.sh initialize initialize.sh install-extensions.sh knowledge logs notify on-create.sh pending post-create.sh post-start.sh reload-local.sh research-bundles scripts shareglaude.env shareglaude.env.example shell-init.sh skills test-firewall.sh tests vscode-macos vscode-settings.jsonc zshrc-base zshrc.local.example`.split(' '),
-		yours: `.env.bak-4.3 .state-backup .wtfcmd.yaml .zsh-custom HOW-TO-CAPACITOR-PLUGIN.md README.md RESEARCH.md RUNBOOK.md SECURITY-AUDIT-2026-05.md SECURITY.md _archive shareglaude.env shareglaude.env.example vscode-macos`.split(' '),
+		yours: `.env.bak-4.3 .state-backup .wtfcmd.yaml .zsh-custom SECURITY-AUDIT-2026-05.md _archive shareglaude.env shareglaude.env.example vscode-macos`.split(' '),
 	},
 	symptems: {
 		entries: `.DS_Store .configured-auth .configured-claude-mode .configured-setup .dockerignore .env .env.example .gitignore .gitignore-root Dockerfile Dockerfile.base LESSONS.md README.md RESEARCH.md RUNBOOK.md SECURITY.md claude claude-bridge devcontainer.json diag-ollama-local.sh docker-compose.yml firewall firewall-mode.sh host-helpers init-firewall.sh initialize initialize.sh install-extensions.sh knowledge logs notify on-create.sh orchestration pending post-create.sh post-start.sh pr-drafts shell-init.sh skills test-firewall.sh tests tmp vscode-settings.json zshrc-base zshrc.local.example`.split(' '),
-		yours: `README.md RESEARCH.md RUNBOOK.md SECURITY.md orchestration tmp vscode-settings.json`.split(' '),
+		yours: `orchestration tmp vscode-settings.json`.split(' '),
 	},
 	ragnarokonline: {
 		entries: `.DS_Store .configured-auth .configured-claude-mode .configured-setup .dockerignore .env .env.example .gitignore .gitignore-root .local Dockerfile Dockerfile.base Dockerfile.rizin-toolchain LESSONS.local.md LESSONS.md README.md RESEARCH.md RUNBOOK.md SECURITY.md bin claude claude-bridge devcontainer.json diag-ollama-local.sh docker-compose.yml firewall firewall-mode.sh host-helpers init-firewall.sh initialize initialize.sh install-extensions.sh knowledge logs notify on-create.sh pending post-create.sh post-start.sh pr-drafts shell-init.sh skills test-firewall.sh tests updates vscode-settings.json vscode-settings.jsonc zshrc-base zshrc.local zshrc.local.example`.split(' '),
-		yours: `.local Dockerfile.rizin-toolchain README.md RESEARCH.md RUNBOOK.md SECURITY.md bin updates vscode-settings.json`.split(' '),
+		yours: `.local Dockerfile.rizin-toolchain bin updates vscode-settings.json`.split(' '),
 	},
 }
 

@@ -23,7 +23,7 @@ const ANSWERS: ScaffoldAnswers = {
 	displayName: 'Demo App',
 	stack: 'node',
 	credsVolume: null,
-	claudeCodeVersion: '2.1.272',
+	claudeCodeVersion: '2.1.280',
 }
 
 /** The D15 tree, in full. */
@@ -75,7 +75,7 @@ test('the plan is exactly the D15 tree', () => {
 			'.claude/rules/project.md -> ../../.devcontainer/claude/CLAUDE-project.md',
 		],
 	)
-	assert.equal(plan.imageRef, 'ghcr.io/meitogi/devcontainer-sandbox:1.4.0-cc2.1.272')
+	assert.equal(plan.imageRef, 'ghcr.io/meitogi/devcontainer-sandbox:1.4.1-cc2.1.280')
 })
 
 test('every ownership entry names a file the plan produces', () => {
@@ -108,7 +108,7 @@ test('.env carries the answers live on their documented lines', () => {
 	const shared = buildPlan({ ...ANSWERS, credsVolume: 'claude-creds-team', claudeCodeVersion: '2.1.220' })
 	const env = shared.files.find((file) => file.path === '.devcontainer/.env')?.content ?? ''
 	assert.match(env, /^CLAUDE_CREDS_VOLUME=claude-creds-team$/m)
-	assert.match(env, /^BASE_IMAGE=ghcr\.io\/meitogi\/devcontainer-sandbox:1\.4\.0-cc2\.1\.220$/m)
+	assert.match(env, /^BASE_IMAGE=ghcr\.io\/meitogi\/devcontainer-sandbox:1\.4\.1-cc2\.1\.220$/m)
 	// The example itself stays a template of commented defaults.
 	const example = shared.files.find((file) => file.path === '.devcontainer/.env.example')?.content ?? ''
 	assert.match(example, /^#DC_PROJECT=demo-app$/m)
