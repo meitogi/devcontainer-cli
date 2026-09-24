@@ -143,7 +143,7 @@ export async function initialize(options: InitializeOptions): Promise<number> {
 
 	// === Lifecycle logging (initialize.sh:57-111) ============================
 	const timestamp = stamp(new Date())
-	const logsDir = join(paths.devcontainerDir, 'logs')
+	const logsDir = join(paths.devcontainerDir, 'tmp', 'logs')
 	if (!options.dryRun) mkdirSync(logsDir, { recursive: true })
 	const logger = Logger.create({
 		logFile: join(logsDir, `initialize-${timestamp}.log`),
@@ -205,8 +205,8 @@ async function runInitialize(context: Context): Promise<number> {
 		volumeCreate(credsVolume)
 	}
 
-	const authFlag = join(devcontainerDir, '.configured-auth')
-	const modeFlag = join(devcontainerDir, '.configured-claude-mode')
+	const authFlag = join(devcontainerDir, 'tmp', 'configured', 'auth')
+	const modeFlag = join(devcontainerDir, 'tmp', 'configured', 'claude-mode')
 	const firewallFlag = join(devcontainerDir, 'firewall', 'default-mode')
 
 	// === Team defaults -> .env projection (design §5.7) ======================
@@ -521,8 +521,8 @@ function printSummary(options: SummaryOptions): void {
 	logger.log('    .devcontainer/firewall-mode.sh basic    # DNS allowlist only')
 	logger.log('    .devcontainer/firewall-mode.sh off      # kill-switch (no filter)')
 	logger.log('  Reconfigure (each can be reset independently):')
-	logger.log('    rm .devcontainer/.configured-auth            # reset GitHub auth')
-	logger.log('    rm .devcontainer/.configured-claude-mode     # reset Claude mode')
+	logger.log('    rm .devcontainer/tmp/configured/auth         # reset GitHub auth')
+	logger.log('    rm .devcontainer/tmp/configured/claude-mode  # reset Claude mode')
 	logger.log('    rm .devcontainer/firewall/default-mode       # reset firewall mode')
 	logger.log('  Then rebuild the container.')
 	logger.log('──────────────────────────────────')

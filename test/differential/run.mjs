@@ -69,12 +69,20 @@ function seedScratch(root, name) {
 			const rel = relative(SOURCE_DEVCONTAINER, src)
 			if (rel === '') return true
 			if (SKIP_TOP.has(rel.split('/')[0])) return false
-			return !rel.startsWith('notify/queue')
+			return !rel.startsWith('tmp/') && !rel.startsWith('notify/queue')
 		},
 	})
 	// Remove the flag files so both implementations take the first-run path and
 	// have to write them, and blank default-mode so the seeding branch runs too.
-	for (const flag of ['.configured-auth', '.configured-claude-mode', '.configured-firewall-mode']) {
+	// Both spellings: the bash original writes them at the root, the node port
+	// under tmp/configured/.
+	for (const flag of [
+		'.configured-auth',
+		'.configured-claude-mode',
+		'.configured-firewall-mode',
+		'tmp/configured/auth',
+		'tmp/configured/claude-mode',
+	]) {
 		rmSync(join(dest, flag), { force: true })
 	}
 	writeFileSync(join(dest, 'firewall', 'default-mode'), '', 'utf8')
@@ -107,7 +115,7 @@ function fileList(root) {
 		for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
 			const full = join(dir, entry.name)
 			const rel = relative(root, full)
-			if (rel === '.devcontainer/logs') continue
+			if (rel === '.devcontainer/logs' || rel === '.devcontainer/tmp') continue
 			if (entry.isDirectory()) walk(full)
 			else out.push(rel)
 		}
@@ -164,10 +172,18 @@ function check(name, expected, actual) {
 report.push('=== devc initialize — differential vs initialize.sh ===', '')
 
 check('exit code', bashResult.status, nodeResult.status)
-for (const flag of ['.configured-auth', '.configured-claude-mode', 'firewall/default-mode']) {
-	check(`flag ${flag}`, read(join(bashDir, flag)), read(join(nodeDir, flag)))
+// The node port relocates machine state under tmp/ ; the bash original writes
+// it at the .devcontainer root. Same value, two spellings — so each side is
+// read where its own implementation puts it.
+const RELOCATED = [
+	['auth flag', '.configured-auth', 'tmp/configured/auth'],
+	['claude-mode flag', '.configured-claude-mode', 'tmp/configured/claude-mode'],
+	['firewall mode', 'firewall/default-mode', 'firewall/default-mode'],
+	['logs/host-os', 'logs/host-os', 'tmp/logs/host-os'],
+]
+for (const [label, bashRel, nodeRel] of RELOCATED) {
+	check(label, read(join(bashDir, bashRel)), read(join(nodeDir, nodeRel)))
 }
-check('logs/host-os', read(join(bashDir, 'logs', 'host-os')), read(join(nodeDir, 'logs', 'host-os')))
 check('.env byte for byte', read(join(bashDir, '.env')), read(join(nodeDir, '.env')))
 
 // The docker-argv comparison is SCOPED since the CLI dropped the local base
@@ -193,9 +209,16 @@ check('the CLI never invokes docker build', false, /^build /m.test(read(nodeTrac
 // the shipped template copies of initialize.sh but not in the dogfood one, and
 // this command supersedes both.
 const EXPECTED_NODE_ONLY = ['.vscode/settings.json']
+// fileList skips .devcontainer/tmp, so the markers the node port relocated
+// there stay visible only on the bash side. Their *content* is compared above.
+const EXPECTED_BASH_ONLY = ['.devcontainer/.configured-auth', '.devcontainer/.configured-claude-mode']
 const bashFiles = fileList(dirname(bashDir))
 const nodeFiles = fileList(dirname(nodeDir))
-check('files only in the bash run', '', bashFiles.filter((f) => !nodeFiles.includes(f)).join(','))
+check(
+	'files only in the bash run',
+	EXPECTED_BASH_ONLY.join(','),
+	bashFiles.filter((f) => !nodeFiles.includes(f)).join(','),
+)
 check(
 	'files only in the node run',
 	EXPECTED_NODE_ONLY.join(','),

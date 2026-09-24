@@ -17,7 +17,7 @@ import { spawnNotifyDaemon } from '../src/lib/notify-daemon.js'
 // real one writes, and records the environment it was given.
 const FAKE_DAEMON = `
 const fs = require('node:fs'); const path = require('node:path')
-const queue = path.join(process.cwd(), '.devcontainer', 'notify', 'queue')
+const queue = path.join(process.cwd(), '.devcontainer', 'tmp', 'notify')
 fs.writeFileSync(path.join(queue, '.daemon.pid'), String(process.pid))
 fs.writeFileSync(path.join(queue, 'seen-env.txt'), JSON.stringify({
   NOTIFY_CHANNELS: process.env.NOTIFY_CHANNELS ?? null,
@@ -31,8 +31,10 @@ setTimeout(() => {}, 1500)
 test('the daemon is spawned with the project .env in its environment, .env winning over the host', async () => {
 	const dir = mkdtempSync(join(tmpdir(), 'devc-notify-'))
 	const devcontainerDir = join(dir, '.devcontainer')
-	const queue = join(devcontainerDir, 'notify', 'queue')
+	const queue = join(devcontainerDir, 'tmp', 'notify')
 	mkdirSync(queue, { recursive: true })
+	// The entrypoint stays at notify/index.js; only the queue moved under tmp/.
+	mkdirSync(join(devcontainerDir, 'notify'), { recursive: true })
 	writeFileSync(join(devcontainerDir, 'notify', 'index.js'), FAKE_DAEMON)
 	writeFileSync(join(devcontainerDir, '.env'), '# comment\nNOTIFY_CHANNELS=notify,discord\nNOTIFY_SOUND=off\n')
 	const out = new PassThrough()

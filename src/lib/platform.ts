@@ -116,10 +116,10 @@ export function toHostPath(kind: HostKind, posixPath: string): string {
  * gone stale. The side effect has NOT: `claude/scripts/cdp.mjs` resolves
  * `../../logs/host-os` and reads it. Kept verbatim.
  *
- * `logs/` is gitignored, so this stays machine-local.
+ * `tmp/logs/` is gitignored, so this stays machine-local.
  */
 export function writeHostOs(devcontainerDir: string, kind: HostKind): string {
-	const target = join(devcontainerDir, 'logs', 'host-os')
+	const target = join(devcontainerDir, 'tmp', 'logs', 'host-os')
 	mkdirSync(dirname(target), { recursive: true })
 	writeFileSync(target, `${kind}\n`, 'utf8')
 	return target

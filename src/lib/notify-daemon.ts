@@ -62,7 +62,7 @@ async function spawnNotifyDaemonUnguarded(options: NotifyDaemonOptions): Promise
 	const { logger, devcontainerDir, projectDir } = options
 	const daemonDir = join(devcontainerDir, 'notify')
 	const entrypoint = join(daemonDir, 'index.js')
-	const queueDir = join(daemonDir, 'queue')
+	const queueDir = join(devcontainerDir, 'tmp', 'notify')
 	const logFile = join(queueDir, 'daemon.log')
 	const pidFile = join(queueDir, '.daemon.pid')
 	const startupFile = join(queueDir, '.daemon.startup')

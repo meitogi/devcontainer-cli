@@ -23,7 +23,7 @@ export interface RebuildContextOptions {
 
 export function dumpRebuildContext(options: RebuildContextOptions): void {
 	const { logger, devcontainerDir } = options
-	const logDir = join(devcontainerDir, 'logs')
+	const logDir = join(devcontainerDir, 'tmp', 'logs')
 	mkdirSync(logDir, { recursive: true })
 	const logPath = join(logDir, `rebuild-context-${options.timestamp}.log`)
 

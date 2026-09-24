@@ -150,10 +150,10 @@ test('non-interactive: writes the defaults and syncs the proxy variables', async
 		))
 
 		assert.equal(code, 0)
-		assert.equal(read(join(devcontainerDir, '.configured-auth')), 'standard\n')
-		assert.equal(read(join(devcontainerDir, '.configured-claude-mode')), 'CLAUDE-dev.md\n')
+		assert.equal(read(join(devcontainerDir, 'tmp', 'configured', 'auth')), 'standard\n')
+		assert.equal(read(join(devcontainerDir, 'tmp', 'configured', 'claude-mode')), 'CLAUDE-dev.md\n')
 		assert.equal(read(join(devcontainerDir, 'firewall', 'default-mode')), 'strict\n')
-		assert.equal(read(join(devcontainerDir, 'logs', 'host-os')), 'linux\n')
+		assert.equal(read(join(devcontainerDir, 'tmp', 'logs', 'host-os')), 'linux\n')
 
 		// strict keeps the proxy/CA variables, in the bash order.
 		assert.equal(
@@ -188,7 +188,7 @@ test('a first interactive run never reaches the Claude-mode prompt', async () =>
 	// means the "Press Enter" pause never fires.
 	//
 	// The prompt is reachable only the way the summary tells you to reach it:
-	// `rm .devcontainer/.configured-claude-mode` on its own.
+	// `rm .devcontainer/tmp/configured/claude-mode` on its own.
 	const { projectDir, devcontainerDir, cleanup } = fixture()
 	try {
 		// No answers queued at all — anything that prompted would hang or default.
@@ -196,8 +196,8 @@ test('a first interactive run never reaches the Claude-mode prompt', async () =>
 			initialize({ devcontainerDir, dryRun: false, cwd: projectDir, input: TTY_STDIN(), ask: neverAsked, probe: LINUX_PROBE, ...captured() }),
 		)
 		assert.equal(code, 0)
-		assert.equal(read(join(devcontainerDir, '.configured-auth')), 'standard\n')
-		assert.equal(read(join(devcontainerDir, '.configured-claude-mode')), 'CLAUDE-dev.md\n')
+		assert.equal(read(join(devcontainerDir, 'tmp', 'configured', 'auth')), 'standard\n')
+		assert.equal(read(join(devcontainerDir, 'tmp', 'configured', 'claude-mode')), 'CLAUDE-dev.md\n')
 	} finally {
 		cleanup()
 	}
@@ -205,7 +205,10 @@ test('a first interactive run never reaches the Claude-mode prompt', async () =>
 
 /** Reset only the Claude-mode flag, which is what makes the prompt reachable. */
 function withAuthAlreadyConfigured(devcontainerDir: string): void {
-	writeFileSync(join(devcontainerDir, '.configured-auth'), 'standard\n', 'utf8')
+	// The markers live two levels down now, and the fixture is bare — writeFlag()
+	// creates the parents in the code under test, a raw writeFileSync does not.
+	mkdirSync(join(devcontainerDir, 'tmp', 'configured'), { recursive: true })
+	writeFileSync(join(devcontainerDir, 'tmp', 'configured', 'auth'), 'standard\n', 'utf8')
 }
 
 test('interactive: answering 2 selects the reviewer flavour', async () => {
@@ -217,7 +220,7 @@ test('interactive: answering 2 selects the reviewer flavour', async () => {
 			initialize({ devcontainerDir, dryRun: false, cwd: projectDir, input: TTY_STDIN(), ask: answering('2'), probe: LINUX_PROBE, ...captured() }),
 		)
 		assert.equal(code, 0)
-		assert.equal(read(join(devcontainerDir, '.configured-claude-mode')), 'CLAUDE-reviewer.md\n')
+		assert.equal(read(join(devcontainerDir, 'tmp', 'configured', 'claude-mode')), 'CLAUDE-reviewer.md\n')
 	} finally {
 		cleanup()
 	}
@@ -231,7 +234,7 @@ test('interactive: an empty answer defaults to dev', async () => {
 			initialize({ devcontainerDir, dryRun: false, cwd: projectDir, input: TTY_STDIN(), ask: answering(''), probe: LINUX_PROBE, ...captured() }),
 		)
 		assert.equal(code, 0)
-		assert.equal(read(join(devcontainerDir, '.configured-claude-mode')), 'CLAUDE-dev.md\n')
+		assert.equal(read(join(devcontainerDir, 'tmp', 'configured', 'claude-mode')), 'CLAUDE-dev.md\n')
 	} finally {
 		cleanup()
 	}
@@ -277,7 +280,7 @@ test('a second run re-prompts nothing and leaves the flags alone', async () => {
 			initialize({ devcontainerDir, dryRun: false, cwd: projectDir, input: TTY_STDIN(), ask: neverAsked, probe: LINUX_PROBE, ...captured() }),
 		)
 		assert.equal(code, 0)
-		assert.equal(read(join(devcontainerDir, '.configured-claude-mode')), 'CLAUDE-reviewer.md\n')
+		assert.equal(read(join(devcontainerDir, 'tmp', 'configured', 'claude-mode')), 'CLAUDE-reviewer.md\n')
 	} finally {
 		cleanup()
 	}
@@ -360,7 +363,7 @@ test('an unsupported host is refused by name before anything is written', async 
 			...captured(),
 		})
 		assert.equal(code, 1)
-		assert.equal(existsSync(join(devcontainerDir, 'logs')), false, 'nothing written')
+		assert.equal(existsSync(join(devcontainerDir, 'tmp', 'logs')), false, 'nothing written')
 	} finally {
 		cleanup()
 	}
@@ -382,8 +385,8 @@ test('dry-run writes nothing at all', async () => {
 		assert.equal(code, 0)
 		for (const path of [
 			join(devcontainerDir, '.env'),
-			join(devcontainerDir, '.configured-auth'),
-			join(devcontainerDir, 'logs'),
+			join(devcontainerDir, 'tmp', 'configured', 'auth'),
+			join(devcontainerDir, 'tmp', 'logs'),
 			join(projectDir, '.vscode'),
 		]) {
 			assert.equal(existsSync(path), false, `${path} must not exist after a dry run`)
@@ -421,7 +424,7 @@ test('a padded answer produces the same flag file as an unpadded one', async () 
 			}),
 		)
 		assert.equal(code, 0)
-		assert.equal(read(join(devcontainerDir, '.configured-claude-mode')), 'CLAUDE-reviewer.md\n')
+		assert.equal(read(join(devcontainerDir, 'tmp', 'configured', 'claude-mode')), 'CLAUDE-reviewer.md\n')
 	} finally {
 		cleanup()
 	}
@@ -433,12 +436,13 @@ test('an unwritable notify queue does not fail the run', async () => {
 	const { projectDir, devcontainerDir, cleanup } = fixture()
 	try {
 		withAuthAlreadyConfigured(devcontainerDir)
-		writeFileSync(join(devcontainerDir, '.configured-claude-mode'), 'CLAUDE-dev.md\n', 'utf8')
+		writeFileSync(join(devcontainerDir, 'tmp', 'configured', 'claude-mode'), 'CLAUDE-dev.md\n', 'utf8')
 		mkdirSync(join(devcontainerDir, 'notify'), { recursive: true })
 		writeFileSync(join(devcontainerDir, 'notify', 'index.js'), '', 'utf8')
 		// A regular file where the queue directory has to go: mkdirSync throws
-		// ENOTDIR, exactly as an unwritable mount point would.
-		writeFileSync(join(devcontainerDir, 'notify', 'queue'), '', 'utf8')
+		// ENOTDIR, exactly as an unwritable mount point would. The queue lives
+		// under tmp/ now, while the entrypoint stays at notify/index.js.
+		writeFileSync(join(devcontainerDir, 'tmp', 'notify'), '', 'utf8')
 
 		const code = await withStubDocker(() =>
 			initialize({
