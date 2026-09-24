@@ -150,7 +150,6 @@ test('non-interactive: writes the defaults and syncs the proxy variables', async
 		))
 
 		assert.equal(code, 0)
-		assert.equal(read(join(devcontainerDir, 'tmp', 'configured', 'auth')), 'standard\n')
 		assert.equal(read(join(devcontainerDir, 'tmp', 'configured', 'claude-mode')), 'CLAUDE-dev.md\n')
 		assert.equal(read(join(devcontainerDir, 'firewall', 'default-mode')), 'strict\n')
 		assert.equal(read(join(devcontainerDir, 'tmp', 'logs', 'host-os')), 'linux\n')
@@ -179,42 +178,34 @@ test('non-interactive: writes the defaults and syncs the proxy variables', async
 	}
 })
 
-test('a first interactive run never reaches the Claude-mode prompt', async () => {
-	// Faithful to the bash script, and surprising enough to pin down. On a fresh
-	// setup both flags are absent, so prompt_auth runs — and prompt_auth itself
-	// writes MODE_FLAG when it is missing (initialize.sh:526). By the time the
-	// next line tests `[ ! -f "$MODE_FLAG" ]`, the file exists, so
-	// prompt_claude_mode is skipped and CLAUDE_MODE stays unset, which also
-	// means the "Press Enter" pause never fires.
+test('a first interactive run now reaches the Claude-mode prompt', async () => {
+	// This test used to assert the opposite, and it was faithful to the bash
+	// script: on a fresh setup both flags were absent, prompt_auth ran, and
+	// prompt_auth itself wrote MODE_FLAG (initialize.sh:526). By the time the
+	// next line tested `[ ! -f "$MODE_FLAG" ]` the file existed, so the only
+	// real question in the wizard was skipped and the "Press Enter" pause never
+	// fired — the wizard asked nobody anything.
 	//
-	// The prompt is reachable only the way the summary tells you to reach it:
-	// `rm .devcontainer/tmp/configured/claude-mode` on its own.
+	// The GitHub Auth step is gone, so nothing seeds MODE_FLAG behind our back
+	// and the prompt fires where it always should have.
 	const { projectDir, devcontainerDir, cleanup } = fixture()
 	try {
-		// No answers queued at all — anything that prompted would hang or default.
+		// Answers the mode prompt, then the "Press Enter to continue..." pause.
 		const code = await withStubDocker(() =>
-			initialize({ devcontainerDir, dryRun: false, cwd: projectDir, input: TTY_STDIN(), ask: neverAsked, probe: LINUX_PROBE, ...captured() }),
+			initialize({ devcontainerDir, dryRun: false, cwd: projectDir, input: TTY_STDIN(), ask: answering('2'), probe: LINUX_PROBE, ...captured() }),
 		)
 		assert.equal(code, 0)
-		assert.equal(read(join(devcontainerDir, 'tmp', 'configured', 'auth')), 'standard\n')
-		assert.equal(read(join(devcontainerDir, 'tmp', 'configured', 'claude-mode')), 'CLAUDE-dev.md\n')
+		assert.equal(read(join(devcontainerDir, 'tmp', 'configured', 'claude-mode')), 'CLAUDE-reviewer.md\n')
+		// The retired flag must not come back by a side door.
+		assert.equal(existsSync(join(devcontainerDir, 'tmp', 'configured', 'auth')), false)
 	} finally {
 		cleanup()
 	}
 })
 
-/** Reset only the Claude-mode flag, which is what makes the prompt reachable. */
-function withAuthAlreadyConfigured(devcontainerDir: string): void {
-	// The markers live two levels down now, and the fixture is bare — writeFlag()
-	// creates the parents in the code under test, a raw writeFileSync does not.
-	mkdirSync(join(devcontainerDir, 'tmp', 'configured'), { recursive: true })
-	writeFileSync(join(devcontainerDir, 'tmp', 'configured', 'auth'), 'standard\n', 'utf8')
-}
-
 test('interactive: answering 2 selects the reviewer flavour', async () => {
 	const { projectDir, devcontainerDir, cleanup } = fixture()
 	try {
-		withAuthAlreadyConfigured(devcontainerDir)
 		// Second line answers the "Press Enter to continue..." pause.
 		const code = await withStubDocker(() =>
 			initialize({ devcontainerDir, dryRun: false, cwd: projectDir, input: TTY_STDIN(), ask: answering('2'), probe: LINUX_PROBE, ...captured() }),
@@ -229,7 +220,6 @@ test('interactive: answering 2 selects the reviewer flavour', async () => {
 test('interactive: an empty answer defaults to dev', async () => {
 	const { projectDir, devcontainerDir, cleanup } = fixture()
 	try {
-		withAuthAlreadyConfigured(devcontainerDir)
 		const code = await withStubDocker(() =>
 			initialize({ devcontainerDir, dryRun: false, cwd: projectDir, input: TTY_STDIN(), ask: answering(''), probe: LINUX_PROBE, ...captured() }),
 		)
@@ -271,7 +261,6 @@ test('a missing docker is no longer fatal — the version pin lands, the probe i
 test('a second run re-prompts nothing and leaves the flags alone', async () => {
 	const { projectDir, devcontainerDir, cleanup } = fixture()
 	try {
-		withAuthAlreadyConfigured(devcontainerDir)
 		await withStubDocker(() =>
 			initialize({ devcontainerDir, dryRun: false, cwd: projectDir, input: TTY_STDIN(), ask: answering('2'), probe: LINUX_PROBE, ...captured() }),
 		)
@@ -385,7 +374,7 @@ test('dry-run writes nothing at all', async () => {
 		assert.equal(code, 0)
 		for (const path of [
 			join(devcontainerDir, '.env'),
-			join(devcontainerDir, 'tmp', 'configured', 'auth'),
+			join(devcontainerDir, 'tmp', 'configured', 'claude-mode'),
 			join(devcontainerDir, 'tmp', 'logs'),
 			join(projectDir, '.vscode'),
 		]) {
@@ -411,7 +400,6 @@ test('a padded answer still selects the reviewer flavour, like bash read', () =>
 test('a padded answer produces the same flag file as an unpadded one', async () => {
 	const { projectDir, devcontainerDir, cleanup } = fixture()
 	try {
-		withAuthAlreadyConfigured(devcontainerDir)
 		const code = await withStubDocker(() =>
 			initialize({
 				devcontainerDir,
@@ -435,7 +423,9 @@ test('an unwritable notify queue does not fail the run', async () => {
 	// convenience; a container must still come up without it.
 	const { projectDir, devcontainerDir, cleanup } = fixture()
 	try {
-		withAuthAlreadyConfigured(devcontainerDir)
+		// Pre-seed the mode flag so nothing prompts. writeFlag() creates its own
+		// parents in the code under test; a raw writeFileSync does not.
+		mkdirSync(join(devcontainerDir, 'tmp', 'configured'), { recursive: true })
 		writeFileSync(join(devcontainerDir, 'tmp', 'configured', 'claude-mode'), 'CLAUDE-dev.md\n', 'utf8')
 		mkdirSync(join(devcontainerDir, 'notify'), { recursive: true })
 		writeFileSync(join(devcontainerDir, 'notify', 'index.js'), '', 'utf8')

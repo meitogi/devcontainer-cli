@@ -205,7 +205,6 @@ async function runInitialize(context: Context): Promise<number> {
 		volumeCreate(credsVolume)
 	}
 
-	const authFlag = join(devcontainerDir, 'tmp', 'configured', 'auth')
 	const modeFlag = join(devcontainerDir, 'tmp', 'configured', 'claude-mode')
 	const firewallFlag = join(devcontainerDir, 'firewall', 'default-mode')
 
@@ -237,10 +236,9 @@ async function runInitialize(context: Context): Promise<number> {
 	// === Non-interactive early exit (initialize.sh:618-632) ==================
 	const input = options.input ?? process.stdin
 	if (input.isTTY !== true) {
-		if (!existsSync(authFlag)) {
-			logger.log('ℹ Non-interactive: defaulting auth to standard.')
-			writeFlag(authFlag, 'standard', dryRun, logger)
-			if (!existsSync(modeFlag)) writeFlag(modeFlag, 'CLAUDE-dev.md', dryRun, logger)
+		if (!existsSync(modeFlag)) {
+			logger.log('ℹ Non-interactive: defaulting Claude mode to dev.')
+			writeFlag(modeFlag, 'CLAUDE-dev.md', dryRun, logger)
 		}
 		if (!existsSync(firewallFlag)) {
 			logger.log('ℹ Non-interactive: defaulting firewall to strict.')
@@ -270,10 +268,9 @@ async function runInitialize(context: Context): Promise<number> {
 
 	try {
 		let promptedClaudeMode = false
-		if (!existsSync(authFlag)) promptAuth({ authFlag, modeFlag, logger, dryRun })
-		// Reachable only when .configured-claude-mode was deleted on its own:
-		// promptAuth writes that flag itself when it is missing, exactly as
-		// initialize.sh:526 does, so a genuine first run never gets here.
+		// Reachable on a genuine first run since the GitHub Auth step was
+		// removed: that step seeded this flag as a side effect, which is what
+		// used to make this prompt — the only real question here — unreachable.
 		if (!existsSync(modeFlag)) {
 			await promptClaudeMode({ modeFlag, logger, dryRun, ask })
 			promptedClaudeMode = true
@@ -294,9 +291,9 @@ async function runInitialize(context: Context): Promise<number> {
 
 		await spawnNotifyDaemon({ logger, devcontainerDir, projectDir, dryRun })
 
-		// Pause only when an interactive prompt actually ran. promptAuth is a
-		// silent info banner, so the Claude-mode prompt is the only trigger —
-		// and per the comment above, it is rarely the one that fires.
+		// Pause only when an interactive prompt actually ran. The Claude-mode
+		// prompt is the only one left, and since the GitHub Auth step stopped
+		// seeding its flag it now fires on a genuine first run.
 		if (promptedClaudeMode && !dryRun) await ask('Press Enter to continue...')
 
 		return 0
@@ -457,19 +454,6 @@ export function syncProxyEnv(envFile: string, mode: string, dryRun: boolean, log
 	logger.trace({ kind: 'decide', name: 'proxyEnv', value: 'cleared', why: `firewall mode ${mode}` })
 }
 
-function promptAuth(options: { authFlag: string; modeFlag: string; logger: Logger; dryRun: boolean }): void {
-	const { authFlag, modeFlag, logger, dryRun } = options
-	logger.log('')
-	logger.log('=== GitHub Auth ===')
-	logger.log("  Standard: open a terminal after startup and run 'gh auth login'.")
-	logger.log('  (gh-secure mode dropped in Phase 3 A3 — Level 1 strict blocks')
-	logger.log('  POST github.com/* outside /anthropics/* at the firewall layer.)')
-	logger.log('')
-	writeFlag(authFlag, 'standard', dryRun, logger)
-	if (!existsSync(modeFlag)) writeFlag(modeFlag, 'CLAUDE-dev.md', dryRun, logger)
-	logger.log('✓ Standard auth configured.')
-}
-
 async function promptClaudeMode(options: {
 	modeFlag: string
 	logger: Logger
@@ -507,7 +491,6 @@ function printSummary(options: SummaryOptions): void {
 
 	logger.log('')
 	logger.log('──────────────────────────────────')
-	logger.log('  GitHub:           gh token only')
 	logger.log(`  Claude:           ${claudeLabel}`)
 	logger.log(`  Firewall mode:    ${firewallMode}`)
 	logger.log(
@@ -521,7 +504,6 @@ function printSummary(options: SummaryOptions): void {
 	logger.log('    .devcontainer/firewall-mode.sh basic    # DNS allowlist only')
 	logger.log('    .devcontainer/firewall-mode.sh off      # kill-switch (no filter)')
 	logger.log('  Reconfigure (each can be reset independently):')
-	logger.log('    rm .devcontainer/tmp/configured/auth         # reset GitHub auth')
 	logger.log('    rm .devcontainer/tmp/configured/claude-mode  # reset Claude mode')
 	logger.log('    rm .devcontainer/firewall/default-mode       # reset firewall mode')
 	logger.log('  Then rebuild the container.')
