@@ -115,7 +115,7 @@ test('a v2 tree gets the report, exit 0, and not one byte changes', () => {
 		assert.match(out, /\d\. remove +Dockerfile\.base, the Dockerfile\.<stack> variants, \.configured-setup/)
 		// Text the trees of 2026-09-23 proved wrong or stale: the image ships no
 		// patcher (4.1i), and only the 1.2.0 lines look at a workspace loader.
-		assert.match(out, /\d\. docker-compose\.yml .*\n.*default ghcr\.io\/meitogi\/devcontainer-sandbox:1\.4\.1-cc2\.1\.280\)/)
+		assert.match(out, /\d\. docker-compose\.yml .*\n.*default ghcr\.io\/meitogi\/devcontainer-sandbox:1\.5\.0-cc2\.1\.280\)/)
 		assert.match(out, /image lines before 1\.3\.0 still prefer a\n.*workspace loader/)
 		assert.doesNotMatch(out, /ship in the image and your own|published image lines/)
 		assert.match(out, /"customizations": \{ "stitchu-devc": \{\} \}/)
