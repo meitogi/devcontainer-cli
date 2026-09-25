@@ -184,7 +184,7 @@ async function runInitialize(context: Context): Promise<number> {
 	// The host OS is only knowable here: this is the one component that runs on
 	// the host, so it is the only place that can answer. See platform.ts.
 	if (!dryRun) writeHostOs(devcontainerDir, hostKind)
-	logger.trace({ kind: 'fs', op: 'write', path: join(devcontainerDir, 'logs', 'host-os') })
+	logger.trace({ kind: 'fs', op: 'write', path: join(devcontainerDir, 'tmp', 'logs', 'host-os') })
 
 	// === .env (initialize.sh:113-123) ========================================
 	// `set -a; source .env` assigns unconditionally, so a value in the file wins

@@ -5,12 +5,35 @@ Maintainer documentation. If you only consume the package, you want
 
 ## Steps
 
-0. Check `templates/` for rollout jargon before it ships — internal phase/
-   session labels ("Phase 3 A3", "Session 4") leak in from time to time and
-   read as nonsense to a project that never saw the rollout:
-   ```sh
-   grep -rniE "phase [0-9]|session [0-9]|\bD[0-9]{1,2}\b" templates/
-   ```
+0. Two checks on what is about to ship.
+
+   - **Re-copy `notify/` from the development tree.** The tarball's copy is the
+     one every project runs, and this repo is not where the daemon is edited —
+     the dogfood's `.devcontainer/notify/` is, which is why its `.env` pins
+     `NOTIFY_DAEMON_DIR=notify`. Skipping this ships yesterday's daemon to
+     everyone, which is the exact failure the vendoring removed: before it, a
+     project ran a copy 20 days stale and nothing could say so.
+     ```sh
+     rm -rf notify
+     rsync -a --exclude='.DS_Store' \
+       ../../.devcontainer/notify/{index.js,package.json,lib,vendor} notify/
+     git status --short notify/
+     ```
+     The `rm -rf` is the point, not carelessness: `rsync --delete` prunes inside
+     the directories it recurses into but leaves anything stranded at the
+     destination root, so a file the daemon dropped would ship forever. Nothing
+     here is authored — the four entries above rebuild it whole.
+
+     No output from `git status` is a valid answer: it means the daemon did not
+     change since the last release. Four entries and nothing else — `tools/`
+     resolves `__dirname/../../logs/` and would break from inside the npx cache,
+     and `queue*/` is ~15 MB of runtime state.
+   - **Check `templates/` for rollout jargon.** Internal phase/session labels
+     ("Phase 3 A3", "Session 4") leak in from time to time and read as nonsense
+     to a project that never saw the rollout:
+     ```sh
+     grep -rniE "phase [0-9]|session [0-9]|\bD[0-9]{1,2}\b" templates/
+     ```
 1. Bump `version` in `package.json` (every change to what ships in the tarball
    = a bump; a commit that changes only CI or maintainer docs does not).
    Use `npm version <v> --no-git-tag-version` rather than editing by hand — it

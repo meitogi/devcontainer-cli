@@ -5,9 +5,13 @@
 // TTY, which is the right choice — it is what CI and a VS Code rebuild hit —
 // but it means the Claude-mode prompt never fires there.
 //
-// The fixture is deliberately bare. No notify/index.js means the daemon spawn
-// returns immediately — a property of the code under test, not a stub bolted
-// on. Docker does need standing in for, since a missing docker is fatal by
+// The fixture is deliberately bare, and NOTIFY_DAEMON_DIR below keeps it that
+// way: the package now ships its own notify/index.js, so without the override
+// every dryRun:false test here would spawn a real daemon against its own scratch
+// directory and leave it running after the directory is gone. Pointing the
+// override at the fixture's absent notify/ restores the property these tests
+// rely on — the spawn reports and returns instead of launching anything.
+// Docker does need standing in for, since a missing docker is fatal by
 // design and there is none inside this container; the stub records nothing and
 // succeeds at everything, which drives the "image already present, no rebuild
 // signal" path.
@@ -21,6 +25,12 @@ import { PassThrough, Writable } from 'node:stream'
 import { initialize } from '../src/commands/initialize.js'
 import { DEFAULT_CLAUDE_CODE_VERSION } from '../src/lib/docker.js'
 import type { HostProbe } from '../src/lib/platform.js'
+
+// Relative to devcontainerDir, so it lands inside each fixture rather than on a
+// fixed absolute path. `notify` and not a path that cannot exist: the test at
+// "an unwritable notify queue does not fail the run" writes a real index.js there
+// and needs the spawn to get as far as the queue mkdirSync.
+process.env['NOTIFY_DAEMON_DIR'] = 'notify'
 
 const LINUX_PROBE: HostProbe = { platform: 'linux', env: {}, procVersion: 'Linux version 6.12.76-linuxkit' }
 

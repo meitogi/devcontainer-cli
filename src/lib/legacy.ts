@@ -153,12 +153,12 @@ export const LEGACY_LAYOUT: Readonly<Record<string, LayoutEntry>> = {
 	'reload-local.sh': { category: 'image', note: 'reload-firewall in the image' },
 	'knowledge': { category: 'image', note: 'reference files, deliberately unlayered — nothing reads them at runtime' },
 	// --- no v3 home yet ---
-	'notify': { category: 'pending', note: 'the notifier ships as its own binary later' },
 	'claude-bridge': { category: 'pending', note: 'its compose service stays yours' },
 	'host-helpers': { category: 'pending', note: 'four of them belong to the local-base-image era and nothing replaces them — analyze-base-image, diag-base-image-sharing, rebuild-base-image, verify-slim-base; watch-log-cleanup is inlined in the image\'s own hook, so a v3 tree drops it too; the rest stays yours' },
 	'scripts': { category: 'pending' },
 	// --- retired ---
 	'initialize': { category: 'retired', note: 'notify-daemon.sh and rebuild-debug.sh are ported into the CLI' },
+	'notify': { category: 'retired', note: "the daemon ships in the CLI's own tarball and is the copy that runs; set NOTIFY_DAEMON_DIR in .env to keep running this one" },
 	'firewall-mode.sh': { category: 'retired', note: 'edit firewall/default-mode and rebuild — no v3 script yet; the image banner names the file since 1.4.1' },
 	'diag-ollama-local.sh': { category: 'retired' },
 	'tests': { category: 'retired', note: 'the v2 suites test the local base image and its install.sh; the published image carries its own, run from its repo' },

@@ -101,8 +101,11 @@ test('a v2 tree gets the report, exit 0, and not one byte changes', () => {
 		assert.match(out, /\.devcontainer\/ entries \(12\)/)
 		assert.match(out, /^ {4}config \(6\)/m)
 		assert.match(out, /^ {4}image \(1\)[^\n]*\n {6}Dockerfile\.base$/m)
-		assert.match(out, /^ {4}pending \(1\)[^\n]*\n {6}notify\/$/m)
-		assert.match(out, /^ {4}retired \(1\)[^\n]*\n {6}initialize\/$/m)
+		// notify/ left pending for retired once the daemon moved into this package's
+		// own tarball, which empties the category on this fixture — migrate.ts:131
+		// skips an empty one rather than printing a bare heading.
+		assert.doesNotMatch(out, /^ {4}pending /m)
+		assert.match(out, /^ {4}retired \(2\)[^\n]*\n {6}initialize\/ {2}notify\/$/m)
 		assert.match(out, /^ {4}runtime \(2\)[^\n]*\n {6}\.configured-setup  logs\/$/m)
 		assert.match(out, /^ {4}yours \(1\)[^\n]*\n {6}orchestration\/$/m)
 

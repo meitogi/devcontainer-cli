@@ -10,6 +10,7 @@ import { join, relative as relativePath } from 'node:path'
 import { placeholders, render, TemplateError } from '../src/lib/template.js'
 import { TEMPLATES_DIR, templateValues } from '../src/lib/scaffold.js'
 import { PACKAGE_ROOT } from '../src/lib/version.js'
+import { VENDORED_NOTIFY_DIR } from '../src/lib/notify-daemon.js'
 
 test('substitutes every occurrence of a key', () => {
 	assert.equal(render('a {{X}} b {{X}} {{Y}}', { X: '1', Y: '2' }), 'a 1 b 1 2')
@@ -56,22 +57,30 @@ test('the templates use exactly the keys the wizard provides', () => {
 	for (const key of used) assert.ok(provided.includes(key), `${key} is used but never provided`)
 })
 
-test('every template file is in the npm pack listing', () => {
+test('every template and vendored-daemon file is in the npm pack listing', () => {
 	// npm drops files named .gitignore from tarballs without a word; this is
 	// the guard that keeps the shipped tree equal to the checked-out one.
+	//
+	// notify/ rides the same guard for two entries npm can swallow just as
+	// quietly: the nested package.json — 23 bytes that make `require()` work at
+	// all, the package itself being "type": "module" — and vendor/senders/
+	// claude-code.icns, the one binary in the tree.
 	const packed = spawnSync('npm', ['pack', '--dry-run', '--json', '--silent'], { cwd: PACKAGE_ROOT, encoding: 'utf8' })
 	assert.equal(packed.status, 0, packed.stderr)
 	const listing = JSON.parse(packed.stdout) as { files: { path: string }[] }[]
 	const shipped = new Set((listing[0]?.files ?? []).map((file) => file.path))
-	for (const file of walk(TEMPLATES_DIR)) {
+	for (const file of [...walk(TEMPLATES_DIR), ...walk(VENDORED_NOTIFY_DIR)]) {
 		const relative = relativePath(PACKAGE_ROOT, file)
-		assert.ok(shipped.has(relative), `${relative} is in templates/ but not in the tarball`)
+		assert.ok(shipped.has(relative), `${relative} is on disk but not in the tarball`)
 	}
 })
 
 function walk(dir: string): string[] {
 	const out: string[] = []
 	for (const name of readdirSync(dir)) {
+		// npm strips .DS_Store from the tarball without a word, and the host is a
+		// Mac: one Finder visit would redden a test that has nothing to do with it.
+		if (name === '.DS_Store') continue
 		const path = join(dir, name)
 		if (statSync(path).isDirectory()) out.push(...walk(path))
 		else out.push(path)
