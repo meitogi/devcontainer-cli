@@ -8,14 +8,28 @@ baked into the image.
 npx @meitogi/devcontainer-cli init
 ```
 
+## Documentation
+
+The image's documentation is the documentation: what a devcontainer is, what
+this one adds, the vocabulary, one how-to per common gesture, and
+troubleshooting by symptom —
+<https://github.com/meitogi/devcontainer-sandbox/blob/master/docs/index.md>.
+Every container built on the image prints that link at startup. This README
+covers only the host-side commands.
+
+If you have never done this before, start at
+[getting started](https://github.com/meitogi/devcontainer-sandbox/blob/master/docs/getting-started.md);
+it walks `devc init` question by question.
+
 ## Status
 
-`0.1.1` — two real commands, published on npm.
+`0.4.1` — three real commands, published on npm.
 
 | Command | State |
 |---|---|
 | `devc init` | **implemented** — scaffold a project's `.devcontainer/` (wizard) |
 | `devc initialize` | **implemented** — host-side pre-container setup |
+| `devc migrate` | **implemented** — read-only report on an `install.sh` tree and what moving it costs |
 | `devc update` | stub — bump base + Claude Code versions |
 | `devc doctor` | stub — diagnostics |
 
@@ -31,16 +45,16 @@ separately:
 
 | Artefact | Source | Distributed via |
 |---|---|---|
-| the **image** | [`meitogi/devcontainer-sandbox`](https://github.com/meitogi/devcontainer-sandbox), tagged `v1.4.0` | `ghcr.io/meitogi/devcontainer-sandbox:<base>-cc<claude-code>` |
+| the **image** | [`meitogi/devcontainer-sandbox`](https://github.com/meitogi/devcontainer-sandbox) | `ghcr.io/meitogi/devcontainer-sandbox:<base>-cc<claude-code>` |
 | the **CLI** | this repo, `meitogi/devcontainer-cli` | npm, `@meitogi/devcontainer-cli` |
 
 Hooks, skills, knowledge and the firewall machinery all live in the image,
 not in what `devc init` writes — see
-[EXTENDING.md](https://github.com/meitogi/devcontainer-sandbox/blob/v1.4.0/EXTENDING.md)
+[EXTENDING.md](https://github.com/meitogi/devcontainer-sandbox/blob/master/EXTENDING.md)
 and the per-stack Dockerfile blocks:
-[`stacks/php.md`](https://github.com/meitogi/devcontainer-sandbox/blob/v1.4.0/stacks/php.md),
-[`stacks/android.md`](https://github.com/meitogi/devcontainer-sandbox/blob/v1.4.0/stacks/android.md),
-[`stacks/android-capacitor.md`](https://github.com/meitogi/devcontainer-sandbox/blob/v1.4.0/stacks/android-capacitor.md).
+[`stacks/php.md`](https://github.com/meitogi/devcontainer-sandbox/blob/master/stacks/php.md),
+[`stacks/android.md`](https://github.com/meitogi/devcontainer-sandbox/blob/master/stacks/android.md),
+[`stacks/android-capacitor.md`](https://github.com/meitogi/devcontainer-sandbox/blob/master/stacks/android-capacitor.md).
 
 ## `devc init`
 
@@ -56,7 +70,7 @@ guess the stack, then asks — saying what each answer is used for:
 
 1. **Stack** — Node.js needs nothing; PHP, Android and Capacitor point at the
    documented Dockerfile blocks in the base repo's
-   [`stacks/`](https://github.com/meitogi/devcontainer-sandbox/blob/v1.4.0/stacks/)
+   [`stacks/`](https://github.com/meitogi/devcontainer-sandbox/blob/master/stacks/)
    (see [What this scaffolds](#what-this-scaffolds) above).
 2. **Project id** — `DC_PROJECT`: the compose project name and the prefix of
    the project's volumes.
