@@ -564,3 +564,80 @@ test('nothing builds the base image — even when a Dockerfile.base is present',
 		cleanup()
 	}
 })
+
+test('the screen is one vocabulary, names both versions, and keeps recipes in the log', async () => {
+	// Three things this pins, each of which was wrong at some point today.
+	//
+	// One vocabulary: the v2 script opened "=== DevContainer Setup ===" over a
+	// section whose only content was "=== Claude Mode ===", and the first rewrite
+	// added boxes on top of that. A frame, then loose text, then a frame.
+	//
+	// Both versions named. The panel used to show one opaque tag, and it derived
+	// it from this package's own constants instead of reading the tree — so it
+	// named an image that was never published the first time anyone looked.
+	//
+	// No emoji-presentation glyph reaches the screen: they stop taking colour and
+	// start taking two columns, which is what the ASCII markers exist for.
+	const { projectDir, devcontainerDir, cleanup } = fixture()
+	const capture = captured()
+	try {
+		// A pin DEFAULT_BASE_VERSION would never produce, so a derivation cannot
+		// pass this by accident.
+		writeFileSync(
+			join(devcontainerDir, 'Dockerfile'),
+			'ARG BASE_IMAGE=ghcr.io/meitogi/devcontainer-sandbox:1.4.1-cc2.1.272\nFROM ${BASE_IMAGE}\n',
+			'utf8',
+		)
+		const code = await withStubDocker(() =>
+			withoutAmbientPin(() =>
+				initialize({
+					devcontainerDir,
+					dryRun: false,
+					cwd: projectDir,
+					input: PIPED_STDIN(),
+					probe: LINUX_PROBE,
+					...capture,
+				}),
+			),
+		)
+		assert.equal(code, 0)
+		const screen = capture.text()
+
+		assert.match(screen, /^devc initialize \d+\.\d+\.\d+$/m, 'a plain title, no frame')
+		assert.doesNotMatch(screen, /[╔╠╚║═]/, 'no box drawing')
+		assert.doesNotMatch(screen, /=== /, 'no v2 section headers')
+
+		assert.match(screen, /^ {4}sandbox {6}1\.4\.1$/m, 'the sandbox version the tree pins')
+		assert.match(screen, /^ {4}claude code {2}2\.1\.272$/m, 'and the Claude Code version, named separately')
+		assert.doesNotMatch(screen, /devcontainer-sandbox:1\.4\.1-cc2\.1\.272/, 'the ref itself stays out unless it deviates')
+		assert.match(screen, /^ {4}mode {9}(first build|rebuild|reopen|unknown)/m, 'which of the three starts this is')
+
+		// Markers, and nothing that a terminal might render as an emoji.
+		assert.match(screen, /^\[[+>!]\] /m, 'steps carry an ASCII marker')
+		assert.doesNotMatch(screen, /[✓→⚠✗📖·—]/, 'no emoji-presentation or decorative glyph on screen')
+
+		// The closing block is the opening one's twin: the same title-then-column
+		// shape, so the screen has one device rather than a new one per section.
+		assert.match(screen, /^ready, (all clear|\d+ warning)/m, 'a verdict that answers "must I read this"')
+		assert.match(screen, /^\[\+\] claude {7}dev$/m, 'state rows all carry a marker, so the left edge is a column')
+		assert.match(screen, /^ {4}log {10}\S/m, 'while log is a path, not a state that passed')
+		// The closing sentence is the only line at column 0, and it is last: a run
+		// that asks for Enter has not handed over until Enter is pressed.
+		assert.match(screen, /\nVS Code is (building|reopening) the container\..*\n$/, 'the last line, unindented')
+
+		// The regression, named: never send anyone to a file the template does not
+		// ship. The closing block named it three times until this was written.
+		assert.doesNotMatch(screen, /firewall-mode\.sh/)
+		assert.doesNotMatch(screen, /echo basic >/, 'recipes are log-only')
+
+		const logs = join(devcontainerDir, 'tmp', 'logs')
+		const logFile = join(logs, readdirSync(logs).find((name) => name.endsWith('.log')) ?? '')
+		const logged = readFileSync(logFile, 'utf8')
+		assert.match(logged, /echo basic > \.devcontainer\/firewall\/default-mode/)
+		assert.match(logged, /rm \.devcontainer\/tmp\/configured\/claude-mode/)
+		assert.match(logged, /^=== devc initialize /m, 'the stamped header is log-only')
+		assert.doesNotMatch(screen, /^=== devc initialize /m)
+	} finally {
+		cleanup()
+	}
+})

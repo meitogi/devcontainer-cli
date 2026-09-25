@@ -50,6 +50,16 @@ interface DaemonSource {
 	entrypoint: string
 	origin: string
 	repair: string
+	/**
+	 * Short enough for a panel row: `vendored`, or `NOTIFY_DAEMON_DIR`.
+	 *
+	 * Which copy ran is the fact this whole change exists to make sayable — a
+	 * project ran one 20 days stale for three weeks and nothing could tell. It
+	 * belongs on screen, not only in the log. The long form, with the package
+	 * name and version, stays on the entrypoint= line; the panel's title already
+	 * carries that version, so the row only has to say which copy answered.
+	 */
+	badge: string
 }
 
 /**
@@ -73,13 +83,29 @@ function resolveDaemon(devcontainerDir: string, env: NodeJS.ProcessEnv): DaemonS
 			entrypoint: join(dir, 'index.js'),
 			origin: `NOTIFY_DAEMON_DIR=${override}`,
 			repair: 'unset NOTIFY_DAEMON_DIR in .devcontainer/.env to use the copy this package ships',
+			badge: 'NOTIFY_DAEMON_DIR',
 		}
 	}
 	return {
 		entrypoint: join(VENDORED_NOTIFY_DIR, 'index.js'),
 		origin: `vendored ${CLI_NAME}@${CLI_VERSION}`,
 		repair: `reinstall ${CLI_NAME} — the notify/ directory it ships is missing`,
+		badge: 'vendored',
 	}
+}
+
+/**
+ * One row of the closing panel: what the daemon is doing, and why if it is not.
+ *
+ * Returned rather than printed. The daemon's outcome is a fact about the boot,
+ * and the boot states its facts in one panel — the same grid the image's own
+ * boot-summary draws, so the host half and the container half read alike.
+ */
+export interface NotifyReport {
+	value: string
+	state: 'ok' | 'warn'
+	/** The block under the frame, where a warning says why. Null when ok. */
+	why: string | null
 }
 
 /**
@@ -88,18 +114,19 @@ function resolveDaemon(devcontainerDir: string, env: NodeJS.ProcessEnv): DaemonS
  * Never throws: the bash version was invoked as `spawn_notify_daemon || true`,
  * because a missing desktop notifier must not stop a container from coming up.
  */
-export async function spawnNotifyDaemon(options: NotifyDaemonOptions): Promise<void> {
+export async function spawnNotifyDaemon(options: NotifyDaemonOptions): Promise<NotifyReport | null> {
 	try {
-		await spawnNotifyDaemonUnguarded(options)
+		return await spawnNotifyDaemonUnguarded(options)
 	} catch (error) {
 		// `spawn_notify_daemon || true` (initialize.sh:656). An unwritable queue
 		// directory or a full disk must not be the reason a container fails to
 		// come up — the daemon is a convenience, not a dependency.
-		options.logger.log(`⚠ Notify daemon : ${error instanceof Error ? error.message : String(error)} — skipping`)
+		const message = error instanceof Error ? error.message : String(error)
+		return { value: 'not started', state: 'warn', why: message }
 	}
 }
 
-async function spawnNotifyDaemonUnguarded(options: NotifyDaemonOptions): Promise<void> {
+async function spawnNotifyDaemonUnguarded(options: NotifyDaemonOptions): Promise<NotifyReport | null> {
 	const { logger, devcontainerDir, projectDir } = options
 
 	// Read once, above everything else: the same map chooses the daemon directory
@@ -128,15 +155,17 @@ async function spawnNotifyDaemonUnguarded(options: NotifyDaemonOptions): Promise
 	if (!existsSync(source.entrypoint)) {
 		// A bare tree used to mean "no daemon here", and the silent return was
 		// right. With a copy shipped in the tarball, it is an anomaly.
-		logger.log(`⚠ Notify daemon : no index.js at ${source.entrypoint} (${source.origin})`)
-		logger.log(`  ${source.repair}`)
-		return
+		return {
+			value: 'no daemon found',
+			state: 'warn',
+			why: `no index.js at ${source.entrypoint} (${source.origin}) — ${source.repair}`,
+		}
 	}
 
 	if (options.dryRun) {
 		const rel = relativeTo(devcontainerDir, source.entrypoint)
 		logger.log(`→ Notify daemon : [dry-run] would spawn ${rel} (${source.origin})`)
-		return
+		return null
 	}
 
 	mkdirSync(queueDir, { recursive: true })
@@ -161,8 +190,7 @@ async function spawnNotifyDaemonUnguarded(options: NotifyDaemonOptions): Promise
 
 	const newPid = launchDetached(source.entrypoint, queueDir, projectDir, logFile, env)
 	if (newPid === null) {
-		logger.log('⚠ Notify daemon : spawn failed — skipping')
-		return
+		return { value: 'spawn failed', state: 'warn', why: `could not start ${source.entrypoint}` }
 	}
 
 	// Give it ~1 s to claim the lockfile, bow out via the existing-daemon
@@ -170,14 +198,15 @@ async function spawnNotifyDaemonUnguarded(options: NotifyDaemonOptions): Promise
 	await sleep(options.settleMs ?? 1000)
 	const outcome = classifySpawn(pidFile, newPid)
 	const logRel = relativeTo(devcontainerDir, logFile)
+	let pid = newPid
 	switch (outcome.kind) {
 		case 'owned':
-			logger.log(`✓ Notify daemon spawned (pid ${newPid} owns lockfile, log: ${logRel})`)
 			break
 		case 'already-running':
 			logger.rawToLogOnly(
 				`ℹ Notify daemon already running (pid ${outcome.ownerPid}) — attempt pid ${newPid} exited cleanly`,
 			)
+			pid = outcome.ownerPid
 			break
 		case 'booting':
 			logger.rawToLogOnly(
@@ -185,13 +214,18 @@ async function spawnNotifyDaemonUnguarded(options: NotifyDaemonOptions): Promise
 			)
 			break
 		case 'crashed':
-			logger.log(`⚠ Notify daemon : pid ${newPid} gone, no lockfile claim — likely crashed silently.`)
-			logger.log(`  Last 20 lines of ${logRel} :`)
-			for (const line of tailFile(logFile, 20)) logger.log(`    ${line}`)
-			return
+			// The tail is diagnosis and goes where diagnosis goes; the panel says
+			// which file to open, which is what the reader needs from the screen.
+			logger.rawToLogOnly(`⚠ Notify daemon : pid ${newPid} gone, no lockfile claim — likely crashed silently.`)
+			for (const line of tailFile(logFile, 20)) logger.rawToLogOnly(`    ${line}`)
+			return {
+				value: 'not running',
+				state: 'warn',
+				why: `pid ${newPid} exited without claiming the lockfile — tail ${logRel}`,
+			}
 	}
 
-	await reportChannels({
+	const channels = await reportChannels({
 		logger,
 		startupFile,
 		logFile,
@@ -199,6 +233,22 @@ async function spawnNotifyDaemonUnguarded(options: NotifyDaemonOptions): Promise
 		pollMs: options.startupPollMs ?? 100,
 		attempts: options.startupPollAttempts ?? 30,
 	})
+
+	if (channels === null) {
+		return { value: `started · pid ${pid}`, state: 'warn', why: `no readback after startup — tail ${logRel}` }
+	}
+	const failed = channels.filter((channel) => channel.state === 'fail').map((channel) => channel.rest)
+	const up = channels.filter((channel) => channel.state === 'ok').map((channel) => channel.name)
+	const value = `running, pid ${pid}, ${source.badge}, ${up.length > 0 ? up.join(', ') : 'no channel'}`
+	if (failed.length > 0) return { value, state: 'warn', why: failed.join('; ') }
+	// A daemon with no channel up is running and doing nothing — the silent
+	// no-op this whole change exists to make visible. Its reasons are already in
+	// the readback, so they go straight under the frame.
+	if (up.length === 0) {
+		const why = channels.map((channel) => channel.rest).join('; ')
+		return { value, state: 'warn', why: why.length > 0 ? why : 'every channel opted out' }
+	}
+	return { value, state: 'ok', why: null }
 }
 
 /**
@@ -287,7 +337,7 @@ interface ChannelReportOptions {
  * ~3 s of polling covers the worst case, which is the Linux sound probe walking
  * paplay / aplay / ffplay; consumer init is under 100 ms in practice.
  */
-async function reportChannels(options: ChannelReportOptions): Promise<void> {
+async function reportChannels(options: ChannelReportOptions): Promise<ChannelStatus[] | null> {
 	const { logger, startupFile } = options
 	for (let i = 0; i < options.attempts && !existsSync(startupFile); i++) {
 		await sleep(options.pollMs)
@@ -295,15 +345,19 @@ async function reportChannels(options: ChannelReportOptions): Promise<void> {
 
 	if (!existsSync(startupFile)) {
 		const seconds = Math.round((options.attempts * options.pollMs) / 100) / 10
-		logger.log(`⚠ Notify daemon : startup file absent after ${seconds}s — tail ${options.logRel} :`)
-		for (const line of tailFile(options.logFile, 5)) logger.log(`    ${line}`)
-		return
+		logger.rawToLogOnly(`⚠ Notify daemon : startup file absent after ${seconds}s — tail ${options.logRel} :`)
+		for (const line of tailFile(options.logFile, 5)) logger.rawToLogOnly(`    ${line}`)
+		return null
 	}
 
+	const out: ChannelStatus[] = []
 	for (const line of readFileSync(startupFile, 'utf8').split('\n')) {
 		const status = parseStatusLine(line)
 		if (status !== null) {
-			logger.styled(SGR_BY_STATUS[status.state], `  ${GLYPH_BY_STATUS[status.state]} ${status.rest}`)
+			// Per-channel detail is a list, and a list belongs in the log: the panel
+			// carries the ones that came up and, when one failed, why.
+			logger.rawToLogOnly(`  ${GLYPH_BY_STATUS[status.state]} ${status.rest}`)
+			out.push(status)
 			continue
 		}
 		if (line.startsWith('READY ')) {
@@ -311,18 +365,26 @@ async function reportChannels(options: ChannelReportOptions): Promise<void> {
 			logger.rawToLogOnly(`ℹ Notify daemon : channels=${channels}`)
 		}
 	}
+	return out
 }
 
 type ChannelState = 'ok' | 'skipped' | 'fail'
 
-const GLYPH_BY_STATUS: Record<ChannelState, string> = { ok: '[✓]', skipped: '[-]', fail: '[x]' }
-const SGR_BY_STATUS: Record<ChannelState, string> = { ok: '32', skipped: '90', fail: '31' }
+interface ChannelStatus {
+	name: string
+	state: ChannelState
+	rest: string
+}
 
-function parseStatusLine(line: string): { state: ChannelState; rest: string } | null {
+const GLYPH_BY_STATUS: Record<ChannelState, string> = { ok: '[✓]', skipped: '[-]', fail: '[x]' }
+
+function parseStatusLine(line: string): ChannelStatus | null {
 	if (!line.startsWith('STATUS ')) return null
 	const rest = line.slice('STATUS '.length)
-	// `STATUS <name> <state> [k=v]...` — the state is the second field.
-	const state = rest.split(/\s+/)[1]
+	// `STATUS <name> <state> [k=v]...` — the name is first, the state second.
+	const fields = rest.split(/\s+/)
+	const name = fields[0] ?? ''
+	const state = fields[1]
 	if (state !== 'ok' && state !== 'skipped' && state !== 'fail') return null
-	return { state, rest }
+	return { name, state, rest }
 }

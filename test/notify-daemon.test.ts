@@ -113,7 +113,8 @@ test('the daemon is spawned with the project .env in its environment, .env winni
 		// per-channel lines instead.
 		assert.match(f.logged(), /channels=notify,discord/)
 		assert.doesNotMatch(f.screen(), /channels=notify,discord/)
-		assert.match(f.screen(), /\[-\] notify skipped|\[✓\] notify ok/)
+		assert.match(f.logged(), /\[-\] notify skipped|\[✓\] notify ok/)
+		assert.doesNotMatch(f.screen(), /\[-\] notify skipped|\[✓\] notify ok/)
 	} finally {
 		if (previous === undefined) delete process.env['NOTIFY_SOUND']; else process.env['NOTIFY_SOUND'] = previous
 		delete process.env['HOST_ONLY']
@@ -174,14 +175,15 @@ test('an override with no index.js warns and names it, rather than falling back'
 	// that asked for its own daemon would get the packaged one without a word.
 	const f = fixture('NOTIFY_DAEMON_DIR=notify\n')
 	try {
-		await spawnNotifyDaemon({
+		const report = await spawnNotifyDaemon({
 			logger: f.logger,
 			devcontainerDir: f.devcontainerDir,
 			projectDir: f.dir,
 			dryRun: true,
 		})
-		assert.match(f.screen(), /⚠ Notify daemon : no index\.js at .*\/notify\/index\.js \(NOTIFY_DAEMON_DIR=notify\)/)
-		assert.match(f.screen(), /unset NOTIFY_DAEMON_DIR/)
+		assert.equal(report?.state, 'warn')
+		assert.match(report?.why ?? '', /no index\.js at .*\/notify\/index\.js \(NOTIFY_DAEMON_DIR=notify\)/)
+		assert.match(report?.why ?? '', /unset NOTIFY_DAEMON_DIR/)
 		assert.doesNotMatch(f.screen(), /would spawn/)
 	} finally {
 		f.cleanup()

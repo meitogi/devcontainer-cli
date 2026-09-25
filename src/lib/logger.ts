@@ -140,6 +140,20 @@ export class Logger {
 		this.sink?.write(`${line}\n`)
 	}
 
+	/**
+	 * A line that carries its own SGR, already composed.
+	 *
+	 * `styled` wraps a whole message, which is enough for a standalone line. A
+	 * panel row is not one: the frame must stay plain while the value inside it
+	 * carries the state, the way the image's boot panel draws it. The caller
+	 * composes both halves; this keeps the fork — escapes to the terminal, plain
+	 * text to the log — in the one place that owns it.
+	 */
+	composed(terminal: string, plain: string): void {
+		this.out.write(`${this.isTTY ? terminal : plain}\n`)
+		this.sink?.write(`${plain}\n`)
+	}
+
 	trace(event: TraceEvent): void {
 		if (this.traceSink === null) return
 		this.traceSink.write(`+ ${formatTrace(event)}\n`)

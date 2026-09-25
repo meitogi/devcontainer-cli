@@ -106,11 +106,11 @@ export function detectRebuildSignals(context: DetectContext): RebuildSignals {
 	const containerId = (output ?? '').split('\n')[0]?.trim() ?? ''
 
 	if (containerId.length === 0) {
-		logger.log('  ↳ No matching devcontainer for this workspace — rebuild or first-time')
+		logger.rawToLogOnly('  ↳ No matching devcontainer for this workspace — rebuild or first-time')
 		logger.trace({ kind: 'decide', name: 'BUILD_BASE_REQUESTED', value: '1', why: 'no container matched labels' })
 		return { requested: true }
 	}
-	logger.log(`  ↳ Devcontainer present (${containerId}, any state) — reopen, no base rebuild`)
+	logger.rawToLogOnly(`  ↳ Devcontainer present (${containerId}, any state) — reopen, no base rebuild`)
 	logger.trace({ kind: 'decide', name: 'BUILD_BASE_REQUESTED', value: '0', why: `container ${containerId} present` })
 	return { requested: false }
 }
