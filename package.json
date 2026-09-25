@@ -1,6 +1,6 @@
 {
   "name": "@meitogi/devcontainer-cli",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Host-side control plane for the meitogi devcontainer sandbox — init wizard, initialize, update, doctor.",
   "type": "module",
   "license": "MIT",
