@@ -23,18 +23,20 @@ it walks `devc init` question by question.
 
 ## Status
 
-`0.4.1` — three real commands, published on npm.
+`0.6.0` — four real commands, published on npm.
 
 | Command | State |
 |---|---|
 | `devc init` | **implemented** — scaffold a project's `.devcontainer/` (wizard) |
 | `devc initialize` | **implemented** — host-side pre-container setup |
 | `devc migrate` | **implemented** — read-only report on an `install.sh` tree and what moving it costs |
+| `devc firewall-mode` | **implemented** — report the firewall mode, or set it |
 | `devc update` | stub — bump base + Claude Code versions |
 | `devc doctor` | stub — diagnostics |
 
-Anything else from the design's command table (`patch`, `firewall`, `skill`,
-`notify`, `host`) is absent rather than stubbed. `devc knowledge` and
+`firewall-mode` is the one firewall verb that shipped; the general
+`devc firewall` of the design's command table is still absent, as are `patch`,
+`skill`, `notify` and `host` — absent rather than stubbed. `devc knowledge` and
 `devc lessons` were dropped for v1 — those files are edited directly.
 
 ## What this scaffolds
@@ -134,6 +136,27 @@ The bash entry point survives the switch if you want it to: the shim at
 the body of a v2 `initialize.sh` with an `exec` of the `npx` line above, so
 `devcontainer.json`'s `initializeCommand` need not change. Add the CLI as a
 root devDependency so that `npx` resolves the local copy offline.
+
+## `devc firewall-mode`
+
+```
+npx @meitogi/devcontainer-cli firewall-mode [off|basic|strict]   # host
+npx devc firewall-mode [off|basic|strict]                        # container
+```
+
+With no argument it reports the mode and writes nothing. With one it writes
+`firewall/default-mode` and then aligns the proxy/CA variables in `.env` with
+it — which a bare `echo strict > firewall/default-mode` does not, leaving `.env`
+saying the opposite of the flag. Running it for the mode already set is the
+repair for exactly that.
+
+It needs no Docker, so the same call works from the host and from inside the
+container. What it cannot do is apply the change: `firewall/` is COPYed into the
+image at build time, so a rebuild is required and the command says so rather
+than pretending otherwise. The v2 `okeish` and `paranoid` are accepted with a
+warning and never written back.
+
+Supersedes `.devcontainer/firewall-mode.sh`, which a v3 tree no longer ships.
 
 ## `devc initialize`
 
