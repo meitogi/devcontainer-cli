@@ -26,6 +26,7 @@ import {
 	volumeCreate,
 } from '../lib/docker.js'
 import { readEnvFile, setEnvVar, uncommentEnvVar, unsetEnvVar } from '../lib/env-file.js'
+import { readMode, syncProxyEnv } from '../lib/firewall.js'
 import { ESC, Logger } from '../lib/logger.js'
 import { readExtPatchesConfig, type ExtPatchesConfig } from '../lib/machine-config.js'
 import { spawnNotifyDaemon, type NotifyReport } from '../lib/notify-daemon.js'
@@ -96,16 +97,6 @@ Environment:
   DEBUG=1                    Write a structured decision trace next to the log
   DEBUG_REBUILD_CONTEXT=1    Dump the rebuild-signal diagnostic
 `
-
-/** Modes that keep the proxy/CA variables. Legacy names remain accepted. */
-const PROXY_MODES = new Set(['strict', 'paranoid'])
-
-const PROXY_SETTINGS: readonly { key: string; value: string }[] = [
-	{ key: 'HTTPS_PROXY', value: 'http://127.0.0.1:8080' },
-	{ key: 'HTTP_PROXY', value: 'http://127.0.0.1:8080' },
-	{ key: 'NO_PROXY', value: 'localhost,127.0.0.0/8,host.docker.internal,.local' },
-	{ key: 'NODE_EXTRA_CA_CERTS', value: '/var/lib/mitmproxy/mitmproxy-ca-cert.pem' },
-]
 
 export async function initialize(options: InitializeOptions): Promise<number> {
 	const paths = resolveProjectPaths(options.cwd, options.devcontainerDir)
@@ -469,27 +460,6 @@ export function applyExtPatchesConfig(options: { envFile: string; logger: Logger
 	}
 }
 
-/**
- * Align the proxy / CA variables with the firewall mode (initialize.sh:206-222).
- *
- *   strict (alias paranoid) — variables set
- *   basic  (alias okeish)   — variables cleared
- *   off                     — variables cleared
- */
-export function syncProxyEnv(envFile: string, mode: string, dryRun: boolean, logger: Logger): void {
-	if (PROXY_MODES.has(mode)) {
-		for (const { key, value } of PROXY_SETTINGS) {
-			if (!dryRun) setEnvVar(envFile, key, value)
-		}
-		logger.trace({ kind: 'decide', name: 'proxyEnv', value: 'set', why: `firewall mode ${mode}` })
-		return
-	}
-	for (const { key } of PROXY_SETTINGS) {
-		if (!dryRun) unsetEnvVar(envFile, key)
-	}
-	logger.trace({ kind: 'decide', name: 'proxyEnv', value: 'cleared', why: `firewall mode ${mode}` })
-}
-
 async function promptClaudeMode(options: {
 	modeFlag: string
 	logger: Logger
@@ -844,12 +814,6 @@ export function countLocalOverrides(devcontainerDir: string): { hosts: number; p
 		}
 	}
 	return { hosts, policy }
-}
-
-function readMode(flagFile: string): string {
-	if (!existsSync(flagFile)) return 'strict'
-	const value = readFileSync(flagFile, 'utf8').trim()
-	return value.length > 0 ? value : 'strict'
 }
 
 /**
