@@ -15,6 +15,7 @@ import { initialize, INITIALIZE_HELP } from './commands/initialize.js'
 import { migrate, MIGRATE_HELP } from './commands/migrate.js'
 import { runStub, STUB_COMMANDS } from './commands/stubs.js'
 import { installFailureHandlers, Logger } from './lib/logger.js'
+import { firewallMode, FIREWALL_MODE_HELP } from './commands/firewall-mode.js'
 import { PathResolutionError } from './lib/paths.js'
 import { CLI_NAME, CLI_VERSION } from './lib/version.js'
 
@@ -36,6 +37,7 @@ Commands:
   init [dir]                 Scaffold a .devcontainer/ into a project (wizard)
   initialize                 Host-side pre-container setup (initializeCommand)
   migrate [dir]              Report what a tree made by install.sh needs to move to v3
+  firewall-mode [mode]       Report the firewall mode, or set it (off|basic|strict)
 ${STUB_COMMANDS.map((stub) => `  ${stub.name.padEnd(26)} ${stub.summary} (not implemented)`).join('\n')}
 
 Options:
@@ -68,6 +70,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 	if (first === 'init') return runInit(rest)
 	if (first === 'initialize') return runInitialize(rest)
 	if (first === 'migrate') return runMigrate(rest)
+	if (first === 'firewall-mode') return runFirewallMode(rest)
 
 	const stub = STUB_COMMANDS.find((candidate) => candidate.name === first)
 	if (stub !== undefined) {
@@ -165,6 +168,53 @@ async function runInit(args: readonly string[]): Promise<number> {
 	}
 
 	return init({ cwd: process.cwd(), targetDir, yes, dryRun, install, ...values })
+}
+
+function runFirewallMode(args: readonly string[]): number {
+	let devcontainerDir: string | undefined
+	let dryRun = false
+	let mode: string | undefined
+
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i] as string
+		if (arg === '--help' || arg === '-h') {
+			process.stdout.write(FIREWALL_MODE_HELP)
+			return EXIT_OK
+		}
+		if (arg === '--dry-run') {
+			dryRun = true
+			continue
+		}
+		if (arg === '--devcontainer-dir' || arg.startsWith('--devcontainer-dir=')) {
+			const parsed = flagValue(args, i, '--devcontainer-dir')
+			if ('error' in parsed) {
+				process.stderr.write('devc firewall-mode: --devcontainer-dir requires a path\n')
+				return EXIT_USAGE
+			}
+			devcontainerDir = parsed.value
+			i += parsed.consumed
+			continue
+		}
+		if (arg.startsWith('-')) {
+			process.stderr.write(`devc firewall-mode: unknown option "${arg}"\n\n${FIREWALL_MODE_HELP}`)
+			return EXIT_USAGE
+		}
+		if (mode !== undefined) {
+			process.stderr.write(`devc firewall-mode: unexpected argument "${arg}" (one mode at most)\n`)
+			return EXIT_USAGE
+		}
+		mode = arg
+	}
+
+	try {
+		return firewallMode({ cwd: process.cwd(), mode, devcontainerDir, dryRun })
+	} catch (error) {
+		if (error instanceof PathResolutionError) {
+			process.stderr.write(`devc firewall-mode: ${error.message}\n`)
+			return EXIT_USAGE
+		}
+		throw error
+	}
 }
 
 async function runInitialize(args: readonly string[]): Promise<number> {

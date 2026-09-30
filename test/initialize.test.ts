@@ -628,12 +628,12 @@ test('the screen is one vocabulary, names both versions, and keeps recipes in th
 		// The regression, named: never send anyone to a file the template does not
 		// ship. The closing block named it three times until this was written.
 		assert.doesNotMatch(screen, /firewall-mode\.sh/)
-		assert.doesNotMatch(screen, /echo basic >/, 'recipes are log-only')
+		assert.doesNotMatch(screen, /devc firewall-mode basic/, 'recipes are log-only')
 
 		const logs = join(devcontainerDir, 'tmp', 'logs')
 		const logFile = join(logs, readdirSync(logs).find((name) => name.endsWith('.log')) ?? '')
 		const logged = readFileSync(logFile, 'utf8')
-		assert.match(logged, /echo basic > \.devcontainer\/firewall\/default-mode/)
+		assert.match(logged, /devc firewall-mode basic/)
 		assert.match(logged, /rm \.devcontainer\/tmp\/configured\/claude-mode/)
 		assert.match(logged, /^=== devc initialize /m, 'the stamped header is log-only')
 		assert.doesNotMatch(screen, /^=== devc initialize /m)

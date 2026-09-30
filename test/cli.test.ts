@@ -23,8 +23,20 @@ test('--help lists init and migrate as real commands and the two stubs as not im
 	assert.doesNotMatch(stdout, /init.*not implemented/)
 	assert.match(stdout, /^  migrate \[dir\] +Report/m)
 	assert.doesNotMatch(stdout, /migrate.*not implemented/)
+	assert.match(stdout, /^  firewall-mode \[mode\] +Report/m)
+	assert.doesNotMatch(stdout, /firewall-mode.*not implemented/)
 	assert.match(stdout, /update .*\(not implemented\)/)
 	assert.match(stdout, /@meitogi\/devcontainer-cli v0\./)
+})
+
+test('firewall-mode --help exits 0; a bad flag, a bad mode and a stray argument exit 2', () => {
+	assert.equal(devc('firewall-mode', '--help').status, 0)
+	const bad = devc('firewall-mode', '--bogus')
+	assert.equal(bad.status, 2)
+	assert.match(bad.stderr, /unknown option "--bogus"/)
+	assert.equal(devc('firewall-mode', '--devcontainer-dir').status, 2)
+	assert.equal(devc('firewall-mode', 'nonsense').status, 2)
+	assert.equal(devc('firewall-mode', 'basic', 'strict').status, 2)
 })
 
 test('init --help exits 0; a bad flag, a missing value and a stray argument exit 2', () => {

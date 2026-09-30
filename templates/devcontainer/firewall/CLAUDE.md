@@ -7,9 +7,15 @@ it whenever it touches files under `.devcontainer/firewall/`.
 ## Mode gate — check first
 
 ```bash
-cat .devcontainer/.configured-firewall-mode
-# empty ⇒ read .devcontainer/firewall/default-mode
+cat /etc/devcontainer-firewall/default-mode   # the mode actually in force
+cat .devcontainer/firewall/default-mode       # what the next rebuild will apply
 ```
+
+The two disagree when the mode was changed since the last rebuild — the baked
+copy wins, because `firewall/` is COPYed into the image at build time. Change it
+with `npx devc firewall-mode <off|basic|strict>` (no argument reports it), then
+rebuild. `.configured-firewall-mode` is a v2 file : if a tree still carries one,
+nothing reads it.
 
 Modes :
 

@@ -291,7 +291,7 @@ async function runInitialize(context: Context): Promise<number> {
 		}
 		if (!existsSync(firewallFlag)) {
 			// No prompt since A4: strict is the intentional max-security baseline.
-			// Flip with firewall-mode.sh, then rebuild.
+			// Flip with `devc firewall-mode <off|basic|strict>`, then rebuild.
 			writeFlag(firewallFlag, 'strict', dryRun, logger)
 			syncProxyEnv(envFile, 'strict', dryRun, logger)
 			logger.log(`${MARK_OK} Firewall mode: strict (default)`)
@@ -550,7 +550,7 @@ function printSummary(options: SummaryOptions): void {
 
 	logger.rawToLogOnly('')
 	logger.rawToLogOnly('  Flip the firewall mode, then rebuild the container:')
-	logger.rawToLogOnly('    echo basic > .devcontainer/firewall/default-mode')
+	logger.rawToLogOnly('    devc firewall-mode basic        (off | basic | strict; also syncs .env)')
 	logger.rawToLogOnly('    strict - default, max security')
 	logger.rawToLogOnly('    basic  - DNS allowlist only')
 	logger.rawToLogOnly('    off    - kill-switch, no filter')
