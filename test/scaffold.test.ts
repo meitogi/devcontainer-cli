@@ -51,6 +51,7 @@ const EXPECTED_FILES = [
 	'.devcontainer/hooks/on-create.d/README.md',
 	'.devcontainer/hooks/post-create.d/README.md',
 	'.devcontainer/hooks/post-start.d/README.md',
+	'.devcontainer/initialize.sh',
 	'.devcontainer/skills/disabled.txt',
 	'.devcontainer/vscode-settings.jsonc',
 	'.devcontainer/zshrc.local.example',
@@ -75,7 +76,7 @@ test('the plan is exactly the D15 tree', () => {
 			'.claude/rules/project.md -> ../../.devcontainer/claude/CLAUDE-project.md',
 		],
 	)
-	assert.equal(plan.imageRef, 'ghcr.io/meitogi/devcontainer-sandbox:1.6.0-cc2.1.280')
+	assert.equal(plan.imageRef, 'ghcr.io/meitogi/devcontainer-sandbox:1.7.0-cc2.1.280')
 })
 
 test('every ownership entry names a file the plan produces', () => {
@@ -83,7 +84,7 @@ test('every ownership entry names a file the plan produces', () => {
 	for (const path in OWNERSHIP) assert.ok(paths.has(path), `${path} is in OWNERSHIP but not in the plan`)
 })
 
-test('devcontainer.json renders parseable, with the stitchu block and the npx initializeCommand', () => {
+test('devcontainer.json renders parseable, with the stitchu block and the shim initializeCommand', () => {
 	const { dir, cleanup } = scratch()
 	try {
 		applyPlan({ projectDir: dir, plan: buildPlan(ANSWERS), dryRun: false })
@@ -91,11 +92,13 @@ test('devcontainer.json renders parseable, with the stitchu block and the npx in
 		const parsed = readDevcontainerJson(file)
 		assert.ok(parsed !== null)
 		assert.equal(parsed['name'], 'Demo App — Claude Code Sandbox')
-		assert.equal(parsed['initializeCommand'], 'npx --yes --package=@meitogi/devcontainer-cli@0.x devc initialize')
-		// `--package=` names what to install, leaving `devc` as the binary. Without it,
-		// npm 6's npx drops the spec, treats `initialize` as a package NAME, and installs
-		// whatever is published under it — measured on a real host, which then sat at an
-		// interactive prompt from a stranger's package.
+		assert.equal(parsed['initializeCommand'], 'bash .devcontainer/initialize.sh')
+		// `bash <script>` rather than the npx call inline: the hook runs under
+		// `/bin/sh -c` on Unix but `cmd.exe /c` on Windows (devcontainers/cli
+		// src/spec-node/utils.ts:560, hardcoded), and `gitbash` is a supported host
+		// kind that stays win32. A command NAME both shells resolve is the only
+		// portable form — and under cmd.exe MSYSTEM is unset, so going straight to
+		// npx would make detectHostKind() return `unknown` and refuse the host.
 		assert.deepEqual(readStitchuCustomizations(file), { disabledHooks: [] })
 	} finally {
 		cleanup()
@@ -112,7 +115,7 @@ test('.env carries the answers live on their documented lines', () => {
 	const shared = buildPlan({ ...ANSWERS, credsVolume: 'claude-creds-team', claudeCodeVersion: '2.1.220' })
 	const env = shared.files.find((file) => file.path === '.devcontainer/.env')?.content ?? ''
 	assert.match(env, /^CLAUDE_CREDS_VOLUME=claude-creds-team$/m)
-	assert.match(env, /^BASE_IMAGE=ghcr\.io\/meitogi\/devcontainer-sandbox:1\.6\.0-cc2\.1\.220$/m)
+	assert.match(env, /^BASE_IMAGE=ghcr\.io\/meitogi\/devcontainer-sandbox:1\.7\.0-cc2\.1\.220$/m)
 	// The example itself stays a template of commented defaults.
 	const example = shared.files.find((file) => file.path === '.devcontainer/.env.example')?.content ?? ''
 	assert.match(example, /^#DC_PROJECT=demo-app$/m)

@@ -92,7 +92,11 @@ export function migrate(options: MigrateOptions): number {
 	const projectId = fields['PROJECT_ID'] ?? tree.env['DC_PROJECT'] ?? null
 	const credsVolume = fields['CLAUDE_CREDS_VOLUME'] ?? tree.env['CLAUDE_CREDS_VOLUME'] ?? null
 	const envState = (key: string): string => (tree.env[key] === undefined ? 'MISSING in .env — step 5' : '.env: set')
-	const npxLine = `npx --yes ${CLI_NAME}@${majorRange()} initialize`
+	// `--package=` names what to install and leaves `devc` as the binary to run.
+	// Without it npm 6's npx drops the spec, treats `initialize` as a package
+	// NAME, and installs whatever is published under it — measured on a real
+	// host, which then sat at an interactive prompt from a stranger's package.
+	const npxLine = `npx --yes --package=${CLI_NAME}@${majorRange()} devc initialize`
 
 	say(`devc migrate — ${CLI_NAME} v${CLI_VERSION}`)
 	say(`  target: ${projectDir}`)
@@ -147,9 +151,13 @@ export function migrate(options: MigrateOptions): number {
 	say('                           "devc-hook on-create" / "devc-hook post-create" / "devc-hook post-start";')
 	say('                           add "customizations": { "stitchu-devc": {} } — the block this CLI')
 	say('                           recognises a v3 tree by. initializeCommand can stay as it is (step 4).')
-	say('    4. initialize.sh       replace its body with the shim (templates/v3/project/initialize.sh in')
-	say(`                           the devcontainer-tools repo): it execs \`${npxLine}\`.`)
-	say('                           Or put that npx line in initializeCommand directly. Either way add the')
+	say('    4. initialize.sh       replace its body with the one this CLI ships — `devc init --yes')
+	say('                           --no-install` into an empty directory hands you .devcontainer/')
+	say(`                           initialize.sh. It finds a Node >= 18 wherever your version manager`)
+	say(`                           keeps it, then execs \`${npxLine}\`.`)
+	say('                           Keep `bash .devcontainer/initialize.sh` as initializeCommand rather')
+	say('                           than inlining the npx call: on Windows the hook runs under cmd.exe,')
+	say('                           where shell syntax is meaningless. Either way add the')
 	say(`                           CLI as a root devDependency (npm i -D ${CLI_NAME}) so npx resolves it offline.`)
 	say(`    5. .env                DC_PROJECT=${projectId ?? '<id>'} and CLAUDE_CREDS_VOLUME=${credsVolume ?? '<volume>'}`)
 	say(`                           — from .configured-setup; ${tree.env['DC_PROJECT'] === undefined || tree.env['CLAUDE_CREDS_VOLUME'] === undefined ? 'at least one is missing here' : 'both already set here'}.`)

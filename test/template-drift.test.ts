@@ -39,6 +39,22 @@ test('the shipped templates match templates/v3/project byte for byte', { skip: !
 	}
 })
 
+// initialize.sh cannot join SHARED: this copy carries {{DEVC_PACKAGE}}/{{DEVC_RANGE}}
+// placeholders, while the monorepo copy spells the package out because apply.sh
+// installs it with a plain `cp` and renders nothing. The divergence is confined
+// to the two PKG/RANGE assignments; the 90-odd lines of node detection around
+// them must match byte for byte, which is the part that actually drifts.
+test('initialize.sh differs from the monorepo copy only by its PKG and RANGE lines', { skip: !existsSync(MONOREPO_TEMPLATE) && 'monorepo template not present' }, () => {
+	const ours = readFileSync(join(TEMPLATES_DIR, 'devcontainer', 'initialize.sh'), 'utf8')
+	const theirs = readFileSync(join(MONOREPO_TEMPLATE, 'initialize.sh'), 'utf8')
+	const strip = (text: string): string =>
+		text.split('\n').filter((line) => !/^(PKG|RANGE)=/.test(line)).join('\n')
+	assert.equal(strip(ours), strip(theirs))
+	// And each tree names the package the way it needs to.
+	assert.match(ours, /^PKG=\{\{DEVC_PACKAGE\}\}\nRANGE=\{\{DEVC_RANGE\}\}$/m)
+	assert.match(theirs, /^PKG=@meitogi\/devcontainer-cli\nRANGE=0\.x$/m)
+})
+
 test('devcontainer.json differs from the monorepo copy only by the initializeCommand block', { skip: !existsSync(MONOREPO_TEMPLATE) && 'monorepo template not present' }, () => {
 	const ours = readFileSync(join(TEMPLATES_DIR, 'devcontainer', 'devcontainer.json'), 'utf8')
 	const theirs = readFileSync(join(MONOREPO_TEMPLATE, 'devcontainer.json'), 'utf8')

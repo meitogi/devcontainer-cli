@@ -82,14 +82,15 @@ guess the stack, then asks — saying what each answer is used for:
    shared one, or a private per-project one.
 5. **Claude Code line** — which published `<base>-cc<claude-code>` image.
 
-Then it writes the thin project layer (~25 files: `devcontainer.json`,
-`Dockerfile`, `docker-compose.yml`, `.env`, the firewall allowlist, the hook
-and skill overlay directories, `claude/CLAUDE-*.md`, a blank `LESSONS.md`),
-appends a fragment to the root `.gitignore`, links `LESSONS.md` and
-`.claude/rules/*` at the root, adds itself as a devDependency to the root
-`package.json` and runs `npm install` — so the container's
-`initializeCommand` (`npx --yes @meitogi/devcontainer-cli@0.x initialize`)
-resolves the local, lockfile-pinned copy with no registry round-trip. Everything
+Then it writes the thin project layer (~26 files: `devcontainer.json`,
+`Dockerfile`, `docker-compose.yml`, `.env`, `initialize.sh`, the firewall
+allowlist, the hook and skill overlay directories, `claude/CLAUDE-*.md`, a blank
+`LESSONS.md`), appends a fragment to the root `.gitignore`, links `LESSONS.md`
+and `.claude/rules/*` at the root, adds itself as a devDependency to the root
+`package.json` and runs `npm install` — so the `npx --yes
+--package=@meitogi/devcontainer-cli@0.x devc initialize` that `initialize.sh`
+execs resolves the local, lockfile-pinned copy with no registry round-trip.
+Everything
 else — hooks, skills, knowledge, the firewall machinery, the toolchain — is
 inherited from `ghcr.io/meitogi/devcontainer-sandbox` at runtime.
 
@@ -131,9 +132,15 @@ checklist of edits git can show and revert, and once it is done — the tree
 builds on the published image and carries the `customizations.stitchu-devc`
 block — `devc init` recognises it and adds the missing files.
 
-The bash entry point survives the switch if you want it to: the shim at
-`templates/v3/project/initialize.sh` in the devcontainer-tools repo replaces
-the body of a v2 `initialize.sh` with an `exec` of the `npx` line above, so
+The bash entry point is not a compatibility concession — it is the shipped form.
+`initializeCommand` is `bash .devcontainer/initialize.sh`, and the scaffold
+writes that script, because the hook runs under `/bin/sh -c` on Unix but
+`cmd.exe /c` on Windows (hardcoded on `process.platform` in `devcontainers/cli`),
+and Git Bash hosts stay `win32`. A bare command name is the only form both
+shells resolve. The script finds a Node >= 18 wherever nvm, fnm, asdf, volta or
+Homebrew keeps it — VS Code resolves the login shell environment on macOS and
+Linux, but never on Windows and not for the WSL server — then execs the `npx`
+line above. A v2 `initialize.sh` is replaced by this one wholesale, so
 `devcontainer.json`'s `initializeCommand` need not change. Add the CLI as a
 root devDependency so that `npx` resolves the local copy offline.
 

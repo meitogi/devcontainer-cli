@@ -11,7 +11,6 @@ import { join } from 'node:path'
 import { Writable } from 'node:stream'
 import { migrate } from '../src/commands/migrate.js'
 import { applyPlan, buildPlan } from '../src/lib/scaffold.js'
-import { CLI_NAME, majorRange } from '../src/lib/version.js'
 
 function scratch(): { dir: string; cleanup: () => void } {
 	const dir = mkdtempSync(join(tmpdir(), 'devc-migrate-'))
@@ -109,13 +108,36 @@ test('a v2 tree gets the report, exit 0, and not one byte changes', () => {
 		assert.match(out, /^ {4}runtime \(2\)[^\n]*\n {6}\.configured-setup  logs\/$/m)
 		assert.match(out, /^ {4}yours \(1\)[^\n]*\n {6}orchestration\/$/m)
 
-		// The checklist carries the values and the exact npx line the scaffold uses.
-		assert.match(out, new RegExp(`\\d\\. initialize\\.sh .*\\n.*execs \`npx --yes ${CLI_NAME.replace('/', '\\/')}@${majorRange().replace('.', '\\.')} initialize\``))
+		// The checklist must quote the line the shipped shim ACTUALLY execs, read
+		// back off a real scaffold — not re-derived from CLI_NAME/majorRange(),
+		// which is why the 0.6.1 drift went unnoticed: both sides of the old
+		// assertion came from the same two constants and neither touched the
+		// template, so migrate advised an npx form the scaffold had stopped using.
+		const ref = join(dir, 'npx-ref')
+		applyPlan({
+			projectDir: ref,
+			plan: buildPlan({ projectId: 'demo-app', displayName: 'Demo App', stack: 'node', credsVolume: null, claudeCodeVersion: '2.1.272' }),
+			dryRun: false,
+		})
+		const shim = readFileSync(join(ref, '.devcontainer', 'initialize.sh'), 'utf8')
+		const execLine = shim.split('\n').find((line) => line.startsWith('exec npx '))
+		assert.ok(execLine !== undefined, 'the scaffolded shim has an exec line')
+		// The shim names the package once and the exec indirects through it, so
+		// resolve those two before comparing — still read off the template, never
+		// re-derived from the constants migrate itself uses.
+		const pkg = /^PKG=(.+)$/m.exec(shim)?.[1]
+		const range = /^RANGE=(.+)$/m.exec(shim)?.[1]
+		assert.ok(pkg !== undefined && range !== undefined, 'the shim declares PKG and RANGE')
+		const shipped = execLine
+			.replace(/^exec /, '')
+			.replace(/ "\$@"$/, '')
+			.replace('"$PKG@$RANGE"', `${pkg}@${range}`)
+		assert.ok(out.includes(`execs \`${shipped}\``), `migrate should quote the shim's own call: ${shipped}`)
 		assert.match(out, /\d\. \.env +DC_PROJECT=symptems and CLAUDE_CREDS_VOLUME=claude-creds-shared-boa\n.*at least one is missing here/)
 		assert.match(out, /\d\. remove +Dockerfile\.base, the Dockerfile\.<stack> variants, \.configured-setup/)
 		// Text the trees of 2026-09-23 proved wrong or stale: the image ships no
 		// patcher (4.1i), and only the 1.2.0 lines look at a workspace loader.
-		assert.match(out, /\d\. docker-compose\.yml .*\n.*default ghcr\.io\/meitogi\/devcontainer-sandbox:1\.6\.0-cc2\.1\.280\)/)
+		assert.match(out, /\d\. docker-compose\.yml .*\n.*default ghcr\.io\/meitogi\/devcontainer-sandbox:1\.7\.0-cc2\.1\.280\)/)
 		assert.match(out, /image lines before 1\.3\.0 still prefer a\n.*workspace loader/)
 		assert.doesNotMatch(out, /ship in the image and your own|published image lines/)
 		assert.match(out, /"customizations": \{ "stitchu-devc": \{\} \}/)

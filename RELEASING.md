@@ -104,8 +104,8 @@ npm view @meitogi/devcontainer-cli version dist.fileCount dist.shasum \
 not attach — check that the repository is still public and that
 `repository.url` matches it exactly.
 
-Then the cold consumer path, which is what the scaffolded `initializeCommand`
-actually does:
+Then the cold consumer path — one hop further than `initializeCommand` now, which
+runs `bash .devcontainer/initialize.sh`, which execs this:
 
 ```sh
 cd "$(mktemp -d)" && git init -q
@@ -189,10 +189,17 @@ guarantee for about a minute.
   `engines.node` advertises.
 - **`test/template-drift.test.ts` skips here, and should.** It compares the
   shipped template against the copy in the monorepo this package was extracted
-  from; outside that tree the path does not resolve and both tests report
+  from; outside that tree the path does not resolve and all three tests report
   `skip`. Keep the `existsSync` guard rather than deleting the file — it wakes
   up on its own if the two trees are ever side by side again, which is exactly
-  when drift happens.
+  when drift happens. The third case guards `initialize.sh`, which cannot be
+  byte-compared because this copy carries the `{{DEVC_PACKAGE}}` placeholders
+  the monorepo copy spells out; it compares everything but the `exec` line,
+  which is where the 80 lines of node detection live.
+- **`test/shim.test.ts` no longer has that guard, deliberately.** The launcher
+  ships in this package now, so the suite renders the real template through
+  `buildPlan`/`applyPlan` and tests the scaffolded artefact. It runs everywhere,
+  including here — do not re-add an `existsSync` skip to it.
 - **`templates/devcontainer/_gitignore` and `templates/root/gitignore-root` are
   misspelled deliberately.** npm unconditionally drops files named
   `.gitignore` from a tarball. `test/template.test.ts` asserts every template

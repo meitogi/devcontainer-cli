@@ -109,7 +109,7 @@ test('--yes scaffolds the tree, the manifest, and runs the install', async () =>
 		assert.ok(files.includes('package.json'))
 		assert.ok(files.includes('.gitignore'))
 		assert.ok(files.includes('LESSONS.md'), 'symlink is listed by readdir')
-		assert.ok(!files.includes('.devcontainer/initialize.sh'), 'the CLI supersedes the script')
+		assert.ok(files.includes('.devcontainer/initialize.sh'), 'the launcher initializeCommand names')
 		assert.ok(!files.includes('.devcontainer/README.md'))
 
 		const json = join(dir, '.devcontainer', 'devcontainer.json')
@@ -282,7 +282,7 @@ test('flags override the defaults and reach the files', async () => {
 		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
 		assert.equal(env['DC_PROJECT'], 'custom-id')
 		assert.equal(env['CLAUDE_CREDS_VOLUME'], undefined)
-		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:1.6.0-cc2.1.220')
+		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:1.7.0-cc2.1.220')
 		assert.equal(readDevcontainerJson(join(dir, '.devcontainer', 'devcontainer.json'))?.['name'], 'Custom Name — Claude Code Sandbox')
 		assert.match(readFileSync(join(dir, '.devcontainer', 'claude', 'CLAUDE-project.md'), 'utf8'), /Default stack\*\* : PHP/)
 		assert.match(run.out, /stacks\/php\.md/)

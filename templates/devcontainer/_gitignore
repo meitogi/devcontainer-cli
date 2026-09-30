@@ -1,25 +1,24 @@
-# DevContainer (v2) — internals scoped to .devcontainer/
+# DevContainer (v3) — internals scoped to .devcontainer/
 
 # Everything a machine writes lives under tmp/ : the patcher cache
 # (cache/ext-patchs/<ref>/), the notify queue and its .authority, the lifecycle
-# logs and the setup markers. Nothing under it is a source — `rm -rf tmp/` costs
-# only a refetch of the patchers from the private repository, which is exactly
-# what moving them out of this tree was meant to keep out of git.
+# logs and the setup markers, and watch-log's host hand-off (tmp/pending/, which
+# the image purges past 60 min anyway). Nothing under it is a source — `rm -rf
+# tmp/` costs only a refetch of the patchers from the private repository, which
+# is exactly what moving them out of this tree was meant to keep out of git.
 tmp/
 
 # Secrets and per-dev overrides — hand-edited, never generated
 .env
 
-# Skill scratch dirs (keep dir via .keep, ignore content)
-pending/*
+# prepare-pr's output: authored documents you copy into `gh pr create`, and
+# nothing purges them — which is why this one stays out of tmp/, whose whole
+# promise is that deleting it costs nothing. watch-log's pending/ went the other
+# way, under tmp/, because the image purges it. research-bundles/ and scan-deps/
+# left with their skills: no baked skill references either any more.
 pr-drafts/*
-research-bundles/*
-scan-deps/*
 
-!pending/.keep
 !pr-drafts/.keep
-!research-bundles/.keep
-!scan-deps/.keep
 
 # Python bytecode cache — anywhere under .devcontainer/
 **/__pycache__/
