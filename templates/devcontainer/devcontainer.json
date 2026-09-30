@@ -79,7 +79,7 @@
   // resolves the locally installed, lockfile-pinned copy with no registry
   // round-trip. The range spec matters: a bare package name makes npx check
   // the registry on every start and prefer a newer cached version.
-  "initializeCommand": "npx --yes {{DEVC_PACKAGE}}@{{DEVC_RANGE}} initialize",
+  "initializeCommand": "npx --yes --package={{DEVC_PACKAGE}}@{{DEVC_RANGE}} devc initialize",
   // devc-hook is pre-installed in the base image at /usr/local/bin/. It reads
   // hooks/<phase>.d/*.sh from /opt/devcontainer/base/ (image) + .devcontainer/hooks/
   // (project overlay), dedups by filename (overlay wins), and runs them in

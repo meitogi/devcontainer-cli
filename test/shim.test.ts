@@ -40,14 +40,29 @@ function scaffoldedInitializeCommand(dir: string): string {
 }
 
 /** A PATH holding only what the shim needs besides npx: dirname (and bash is invoked by absolute path). */
-function pathWith(dir: string, fakeNpx: string | null): string {
+function pathWith(dir: string, fakeNpx: string | null, withNode = false): string {
 	const bin = join(dir, 'bin')
 	mkdirSync(bin, { recursive: true })
 	const dirname = spawnSync('/bin/sh', ['-c', 'command -v dirname'], { encoding: 'utf8' }).stdout.trim()
 	symlinkSync(dirname, join(bin, 'dirname'))
+	// The shim also uses date/mkdir/uname for its host report. A real host has
+	// them; symlink them rather than pretend a PATH that thin is realistic.
+	for (const tool of ['date', 'mkdir', 'uname', 'cat', 'tr']) {
+		const found = spawnSync('/bin/sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).stdout.trim()
+		if (found !== '') symlinkSync(found, join(bin, tool))
+	}
 	if (fakeNpx !== null) {
 		writeFileSync(join(bin, 'npx'), fakeNpx, 'utf8')
 		chmodSync(join(bin, 'npx'), 0o755)
+	}
+	// A Node the shim will accept, for the tests that exercise the happy path.
+	// Faked rather than inherited so the result does not depend on the machine
+	// running the suite.
+	if (withNode) {
+		writeFileSync(join(bin, 'node'), '#!/bin/sh\n[ "$1" = "--version" ] && { echo v24.0.0; exit 0; }\nexit 0\n', 'utf8')
+		writeFileSync(join(bin, 'npm'), '#!/bin/sh\necho 11.0.0\n', 'utf8')
+		chmodSync(join(bin, 'node'), 0o755)
+		chmodSync(join(bin, 'npm'), 0o755)
 	}
 	return bin
 }
@@ -72,11 +87,11 @@ test('run from anywhere, the shim hands npx the argv from the project root', { s
 		mkdirSync(join(project, '.devcontainer'), { recursive: true })
 		copyFileSync(SHIM, join(project, '.devcontainer', 'initialize.sh'))
 		const log = join(dir, 'npx.log')
-		const bin = pathWith(dir, `#!/bin/sh\nprintf '%s\\n' "$PWD" "$@" > "${log}"\n`)
+		const bin = pathWith(dir, `#!/bin/sh\nprintf '%s\\n' "$PWD" "$@" > "${log}"\n`, true)
 		const run = spawnSync('/bin/bash', [join(project, '.devcontainer', 'initialize.sh'), '--dry-run'], {
 			cwd: dir,
 			encoding: 'utf8',
-			env: { PATH: bin },
+			env: { PATH: bin, DEVC_NODE_SEARCH: join(dir, 'no-node') },
 		})
 		assert.equal(run.status, 0, run.stderr)
 		const expected = scaffoldedInitializeCommand(join(dir, 'ref'))
@@ -86,16 +101,21 @@ test('run from anywhere, the shim hands npx the argv from the project root', { s
 	}
 })
 
-test('without npx on the host, the shim exits 1 and names Node', { skip }, () => {
+// The shim now searches for a Node >= 18 (nvm/fnm/asdf/volta/homebrew layouts)
+// because initializeCommand runs under `/bin/sh -c` with no profile sourced, so a
+// version manager is invisible here. With none found it must stop, not guess.
+test('without a usable Node on the host, the shim exits 1 and says why', { skip }, () => {
 	const { dir, cleanup } = scratch()
 	try {
 		const project = join(dir, 'proj')
 		mkdirSync(join(project, '.devcontainer'), { recursive: true })
 		copyFileSync(SHIM, join(project, '.devcontainer', 'initialize.sh'))
 		const bin = pathWith(dir, null)
-		const run = spawnSync('/bin/bash', ['.devcontainer/initialize.sh'], { cwd: project, encoding: 'utf8', env: { PATH: bin } })
+		const run = spawnSync('/bin/bash', ['.devcontainer/initialize.sh'], { cwd: project, encoding: 'utf8', env: { PATH: bin, DEVC_NODE_SEARCH: join(dir, 'no-node') } })
 		assert.equal(run.status, 1)
-		assert.match(run.stderr, /npx not found — install Node\.js 18\+ on the host/)
+		assert.match(run.stdout + run.stderr, /no Node >= 18 anywhere this step can see/)
+		// It must not have asked a question it cannot receive an answer to.
+		assert.match(run.stdout + run.stderr, /No terminal is attached/)
 	} finally {
 		cleanup()
 	}

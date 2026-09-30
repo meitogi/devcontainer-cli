@@ -91,7 +91,11 @@ test('devcontainer.json renders parseable, with the stitchu block and the npx in
 		const parsed = readDevcontainerJson(file)
 		assert.ok(parsed !== null)
 		assert.equal(parsed['name'], 'Demo App — Claude Code Sandbox')
-		assert.equal(parsed['initializeCommand'], 'npx --yes @meitogi/devcontainer-cli@0.x initialize')
+		assert.equal(parsed['initializeCommand'], 'npx --yes --package=@meitogi/devcontainer-cli@0.x devc initialize')
+		// `--package=` names what to install, leaving `devc` as the binary. Without it,
+		// npm 6's npx drops the spec, treats `initialize` as a package NAME, and installs
+		// whatever is published under it — measured on a real host, which then sat at an
+		// interactive prompt from a stranger's package.
 		assert.deepEqual(readStitchuCustomizations(file), { disabledHooks: [] })
 	} finally {
 		cleanup()

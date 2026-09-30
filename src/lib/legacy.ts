@@ -159,7 +159,7 @@ export const LEGACY_LAYOUT: Readonly<Record<string, LayoutEntry>> = {
 	// --- retired ---
 	'initialize': { category: 'retired', note: 'notify-daemon.sh and rebuild-debug.sh are ported into the CLI' },
 	'notify': { category: 'retired', note: "the daemon ships in the CLI's own tarball and is the copy that runs; set NOTIFY_DAEMON_DIR in .env to keep running this one" },
-	'firewall-mode.sh': { category: 'retired', note: 'edit firewall/default-mode and rebuild — no v3 script yet; the image banner names the file since 1.4.1' },
+	'firewall-mode.sh': { category: 'retired', note: 'replaced by `devc firewall-mode <off|basic|strict>`, which writes firewall/default-mode and aligns the proxy/CA vars in .env; no argument reports the current mode' },
 	'diag-ollama-local.sh': { category: 'retired' },
 	'tests': { category: 'retired', note: 'the v2 suites test the local base image and its install.sh; the published image carries its own, run from its repo' },
 	'.gitignore-root': { category: 'retired', note: 'install.sh appended it to the root .gitignore; devc init appends its own fragment' },
