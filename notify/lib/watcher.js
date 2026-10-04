@@ -244,23 +244,25 @@ function readNewLines(file, offsets) {
 }
 
 /**
- * Apply one parsed JSONL event to the timer map. Six decision branches
+ * Apply one parsed JSONL event to the timer map. Seven decision branches
  * (each mirrored into state.js for the audit log) :
  *
  *   1. CANCEL — `user_replied` clears any pending timer for this sid.
  *      The user is back, every queued notif is now obsolete.
- *   2. CANCEL — `tool_started` / `tool_finished` / `tool_cancelled` clear
- *      pending permission_request / permission_prompt timers only. Other
- *      event classes (Stop / Idle) stay armed because the tool lifecycle
+ *   2. NO-OP — `tool_started` is ignored : PreToolUse fires before the
+ *      permission dialog opens, so it never means "the user answered".
+ *   3. CANCEL — `tool_finished` / `tool_cancelled` clear pending
+ *      permission_request / permission_prompt timers only. Other event
+ *      classes (Stop / Idle) stay armed because the tool lifecycle
  *      doesn't tell us the user is engaging more broadly.
- *   3. UNMAPPED — eventType has no entry in `delays` ; logged + audited,
+ *   4. UNMAPPED — eventType has no entry in `delays` ; logged + audited,
  *      no timer change.
- *   4. SUPPRESS — `permission_prompt` arriving while a `permission_request`
+ *   5. SUPPRESS — `permission_prompt` arriving while a `permission_request`
  *      is pending for the same sid ; dropped as a duplicate of the same
  *      dialog (see the branch comment), no timer change.
- *   5. REPLACE — a pending timer for this sid already exists ; clear it
+ *   6. REPLACE — a pending timer for this sid already exists ; clear it
  *      and arm a fresh one based on the new event ("latest wins").
- *   6. ARM — no previous timer ; setTimeout(delays[type]) and store.
+ *   7. ARM — no previous timer ; setTimeout(delays[type]) and store.
  *
  * The raw parsed `line` is passed as `payload` into `state.armed` and
  * `state.replaced` so pending.json + actions.jsonl expose the full
@@ -310,11 +312,29 @@ function handleLine(line, { timers, bus, delays, state }) {
 		return
 	}
 
+	// --- NO-OP PATH (tool_started) ---
+	// `tool_started` (PreToolUse) is deliberately inert. It fires BEFORE the
+	// permission dialog opens, never after : over the whole queue history
+	// 501 / 501 permission_request events were preceded by their own
+	// tool_started within 200 ms, and none followed one. So it can never
+	// mean "the user answered". What it meant in practice was a SIBLING tool
+	// from the same parallel tool block starting up — which silently killed
+	// the pending banner. Measured before this was fixed : 66 such cancels,
+	// 57 of them while the permission was still waiting for an answer, worst
+	// case 5 h of silence.
+	//
+	// Nothing is lost by ignoring it : the real Allow / Deny signal arrives
+	// on the inbound channel (lib/inbound-watch.js) ~20 ms after the click,
+	// three orders of magnitude ahead of the 30 s timer, and tool_finished /
+	// tool_cancelled below still cover the no-extension-patch fallback.
+	//
+	// Returning early (rather than dropping it from the branch) keeps it out
+	// of the ARM path, where it would log as an unmapped eventType on every
+	// single tool start.
+	if (event === 'tool_started') return
+
 	// --- CANCEL PATH (tool lifecycle signals) ---
-	// Three events signal "user resolved the permission dialog" :
-	//   tool_started   — PreToolUse fires before the tool runs. Empirically
-	//                    fires BEFORE PermissionRequest in Claude Code, so
-	//                    by itself it's too early. Kept as a no-op safeguard.
+	// Two events signal "user resolved the permission dialog" :
 	//   tool_finished  — PostToolUse fires after the tool completes (Allow
 	//                    path only — PostToolUse doesn't fire on Cancel).
 	//                    Latency = tool execution duration ; for slow tools
@@ -325,10 +345,10 @@ function handleLine(line, { timers, bus, delays, state }) {
 	//                    click — the only way since Claude Code has no
 	//                    "PermissionDenied" hook.
 	//
-	// All three cancel pending perm-related timers for this sid. Other
-	// event types (Stop, Idle) stay armed — they signal user inactivity,
-	// which the click doesn't override.
-	if (event === 'tool_started' || event === 'tool_finished' || event === 'tool_cancelled') {
+	// Both cancel pending perm-related timers for this sid. Other event
+	// types (Stop, Idle) stay armed — they signal user inactivity, which
+	// the click doesn't override.
+	if (event === 'tool_finished' || event === 'tool_cancelled') {
 		const pending = timers.get(sid)
 		if (pending && (pending.eventType === 'permission_request' || pending.eventType === 'permission_prompt')) {
 			clearTimeout(pending.timeout)
@@ -336,16 +356,13 @@ function handleLine(line, { timers, bus, delays, state }) {
 			log.info(`[watcher] ${event.padEnd(14)} ${sid8} — CANCELLED pending ${pending.eventType}`)
 			state?.cancelled({ sid, eventType: pending.eventType, cause: event })
 			bus.emit('cancelled:notification', { id: pending.id, sid, eventType: pending.eventType, reason: event })
-		} else if (event === 'tool_cancelled' || event === 'tool_finished') {
+		} else {
 			// Post-fire cancel : the permission notif already fired and the user
 			// closed the loop — either by denying (`tool_cancelled` via
 			// tail-cancel.js's transcript scan) or by approving+running the tool
 			// to completion (`tool_finished` via PostToolUse). Either way the
 			// banner is stale and must be dismissed via `notif remove` to keep
 			// the "1 delivered banner per sid" invariant.
-			// `tool_started` (PreToolUse) stays a no-op : it fires while the user
-			// is still deciding, and dismissing then would kill the banner
-			// mid-decision.
 			bus.emit('cancelled:notification', { sid, eventType: null, reason: event })
 		}
 		return

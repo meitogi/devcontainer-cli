@@ -195,19 +195,29 @@ asks for a plan reference in the message.
 
 ## 11. Devcontainer signals
 
-Some skills ship a `hooks.json` that `sync-skills.sh` merges into
-Claude settings at container boot. SessionStart hooks can inject
-`<system-reminder>` context surfacing state Claude can't detect
+Some skills ship a `hooks.json` that `sync-skills` merges into Claude
+settings at container boot. SessionStart and UserPromptSubmit hooks can
+inject `<system-reminder>` context surfacing state Claude can't detect
 mid-conversation. Treat these signals as authoritative for the state
 they describe.
 
+Each one **proposes** — never act on it autonomously, and if the user
+declines or postpones, drop it for the session.
+
 Active signals :
 
-- **scan-deps signal: project npm manifests changed since last
-  firewall extract** → before any dependency-touching work, propose
-  `/scan-deps` to the user. Don't run it autonomously. If the user
-  declines or postpones, drop the topic and don't re-raise it the
-  same session.
+- **rollout-debt** (SessionStart, shipped by `prepare-plan`) — a plan
+  directory has open 🚧/📋 rows and nothing in it has been touched for
+  more than `ROLLOUT_DEBT_DAYS` (default 7). At a natural pause, propose
+  closing it out, deferring, or cancelling, and recording the decision in
+  its `STATUS.md`. Never edit a `STATUS.md` autonomously, never start the
+  work.
+- **session-gap** (UserPromptSubmit, shipped by `session-gap`) — more
+  than `SESSION_GAP_HOURS` (default 1) since the last event in this
+  transcript, so the prompt cache is cold and a rewrite costs ~2×. Answer
+  the user's prompt first ; then, only if the remaining work is
+  self-contained, propose moving it to a fresh session and offer to write
+  the hand-off prompt. Never end or clear the session yourself.
 
 ## 12. Project context bridge
 
@@ -228,6 +238,20 @@ For code **you write** (§4 still wins for existing code) :
   the same variable against different thresholds, collapse to a flat
   `if / else if` chain ordered from most restrictive to broadest.
   Branching becomes linear, indentation drops one level.
+- **Object iteration: `for…in` by default.** `Object.entries` /
+  `Object.keys` / `Object.values` allocate an intermediate array on
+  every call. `for (const k in obj) { const v = obj[k] }` iterates
+  directly over enumerable keys with zero allocation.
+- **No `Map` / `Set` by default.** For the common cases — lookup,
+  deduplication, counting — a plain object `{}` and an array are
+  enough and faster (`Map`/`Set` are wrappers with overhead). Before
+  reaching for `Map` because the key happens to be an object, ask:
+  **is there a natural string identifier?** (id, name, uuid, path…).
+  If yes, key a plain object by that string — don't promote an
+  accidental object-key into a reason to use `Map`. `Map`/`Set` is
+  justified only when semantics require it: keys that can't reduce to
+  a string, `.size` needed without recompute, or stable insertion-order
+  iteration with frequent deletions.
 - **Dependency-add hygiene.** Three conditions before `npm install`
   (or composer / pip / …) :
   - **No known CVE / vulnerability** — hard requirement, never
@@ -256,8 +280,12 @@ recap line at the very end of your reply, formatted exactly as :
 **Recap** — <summary ≤ 80 chars>
 ```
 
-The summary is parsed by the `notify-queue` hook ([.devcontainer/skills/notify-queue/hook.js](.devcontainer/skills/notify-queue/hook.js))
-and fed as the body of the host-side desktop notification. Without
+The summary is parsed by the `notify-queue` hook, which the image ships
+at `/opt/devcontainer/base/skills/notify-queue/hook.js` — `sync-skills`
+registers whichever layer provides it, so a project copy under
+`.devcontainer/skills/notify-queue/` replaces the baked one rather than
+registering a second. It is fed as the body of the host-side desktop
+notification. Without
 this line, the hook falls back to a markdown-heuristic excerpt of
 your first usable line (V1) — usually fine, but less precise than
 a recap you crafted on purpose.

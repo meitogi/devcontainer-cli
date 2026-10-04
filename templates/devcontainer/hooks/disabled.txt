@@ -26,4 +26,4 @@
 # Examples (uncomment to apply):
 
 # post-start.d/45-claude-update-probe.sh
-# post-start.d/50-scan-deps-banner.sh
+# post-start.d/30-firewall-local-banner.sh

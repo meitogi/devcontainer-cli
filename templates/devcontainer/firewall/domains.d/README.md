@@ -2,8 +2,8 @@
 
 Drop `<eco>.txt` files here (e.g. `npm.txt`, `composer.txt`) instead of
 growing `../domains.txt` — same 5-format syntax, one ecosystem per file.
-Empty today; typically populated by `extract-auto-dependencies` or the
-`/scan-deps` skill.
+Empty today; maintained by hand — the generator that used to populate these
+left with the scan-deps skill on 2026-09-10.
 
 ## Format
 

@@ -52,8 +52,6 @@ Common misreads to avoid in `basic` :
 - Only DNS / ipset failures indicate a real block (fails loudly).
 - New host needed ? → default to a temporary
   `firewall/domains.local.txt` addition (gitignored, revert-friendly).
-- **Never propose `/prepare-research`** — it's `strict`-only ; in
-  `basic` it brings no added value.
 
 ## `strict` mode : path scopes DO apply
 
@@ -68,24 +66,21 @@ Adding a new endpoint / host in `strict` :
 - Team / permanent : `firewall/domains.txt` + `firewall/policy.d/<host>.yaml`,
   both committed. Standard PR + review.
 
-## `/prepare-research` decision tree
+## A new host, in either mode
 
-The `/prepare-research` skill spawns a scoped research devcontainer.
-Use it ONLY when :
+Two routes, and the cheapest is the default :
 
-1. Mode = `strict` AND
-2. Genuine deep-scope work : third-party POST/DELETE integration,
-   multi-host package evaluation, or clean isolated workspace to
-   experiment without touching main state.
+- **Personal / temporary** — `firewall/domains.local.txt` (+
+  `firewall/policy.local.d/<host>.yaml` in `strict`). Gitignored,
+  revert-friendly, and only baked into the image when
+  `FIREWALL_ALLOW_LOCAL_AT_REBUILD=1`.
+- **Team / permanent** — `firewall/domains.txt` (+
+  `firewall/policy.d/<host>.yaml`). Committed, standard PR + review.
 
-In `basic`, or for lighter needs in `strict`, prefer :
-
-- **Route 2** — temp `firewall/domains.local.txt` addition (default when
-  unsure, cheapest, revert-friendly).
-- **Route 3** — permanent : `domains.local.txt` (personal) or
-  `domains.txt` (team, committed).
-
-See the skill file for the full 3-route matrix.
+A scoped research sibling used to be a third route, through a
+`/prepare-research` skill. No image line ships it any more, so there is
+nothing to propose — widening the allowlist on one of the two routes above
+is the whole decision.
 
 ## Editing firewall config — don't fake-verify
 
