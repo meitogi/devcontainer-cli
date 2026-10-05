@@ -2,20 +2,20 @@
 // sleep-watch — wake detection via wall-clock drift heuristic
 // =============================================================================
 //
-// macOS / Linux / Windows tous gèlent les process Node pendant le sleep système
-// (libuv timers en pause). Au wake, le prochain tick d'un setInterval fire
-// immédiatement et Date.now() montre un saut bien plus grand que la période
-// nominale. Ce module exploite ce comportement : un setInterval(_, 1000) qui
-// compare le delta réel au delta attendu — si la dérive dépasse thresholdMs,
-// c'est un wake.
+// macOS / Linux / Windows all freeze Node processes during system sleep
+// (libuv timers paused). On wake, a setInterval's next tick fires
+// immediately and Date.now() shows a jump far larger than the nominal
+// period. This module exploits that behaviour : a setInterval(_, 1000) that
+// compares the real delta to the expected one — if the drift exceeds
+// thresholdMs, it is a wake.
 //
-// Émet 'system:wake' sur le bus partagé avec `{ gapMs }`. Consommé par
-// lib/docker-watch.js, qui suspend container:gone pendant 30 s pour laisser
-// Docker Desktop reprendre ses esprits sans déclencher un faux exit.
+// Emits 'system:wake' on the shared bus with `{ gapMs }`. Consumed by
+// lib/docker-watch.js, which suspends container:gone for 30 s to let
+// Docker Desktop come back to its senses without triggering a false exit.
 //
-// PAS de pre-sleep detection — le process est gelé avant qu'on puisse réagir.
-// Ça nécessiterait un binding natif (node-mac-power-monitor / IOKit) qu'on
-// évite ici pour rester zéro-dep.
+// NO pre-sleep detection — the process is frozen before we can react.
+// That would require a native binding (node-mac-power-monitor / IOKit) which
+// we avoid here to stay zero-dep.
 // =============================================================================
 
 const log = require('./log')

@@ -50,10 +50,10 @@ function init(file) {
  */
 function line(level, msg) {
 	const out = `${new Date().toISOString()} [${level}] ${msg}\n`
-	// Si init() a tourné on n'écrit qu'au fichier — initialize.sh redirige
-	// déjà stderr vers ce même fichier (`>> "$logfile" 2>&1`), donc dupliquer
-	// via process.stderr.write produit chaque ligne 2× dans daemon.log.
-	// Fallback stderr seulement si pas de logFile (test direct hors daemon).
+	// If init() has run we write to the file only — initialize.sh already
+	// redirects stderr to that same file (`>> "$logfile" 2>&1`), so duplicating
+	// via process.stderr.write produces every line 2× in daemon.log.
+	// stderr fallback only when there is no logFile (direct test outside daemon).
 	if (logFile) {
 		try { fs.appendFileSync(logFile, out) } catch (_) { /* swallow — never crash on log failure */ }
 	} else {

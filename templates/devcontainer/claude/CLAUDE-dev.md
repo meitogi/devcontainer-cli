@@ -35,6 +35,13 @@ files, a migration), propose the `/prepare-plan` skill. It scaffolds
 a dedicated rollout directory (ROLLOUT + STATUS + LOG + EXISTING +
 sessions/) so progress survives session boundaries.
 
+**Session prompts and recaps live in the rollout directory**, under
+`plans/<rollout>/sessions/` (gitignored), never inside a source
+subtree. And a committed `.md` may only reference things that cannot
+disappear — no link or path into `plans/`, a session file, or any
+other artefact outside the tree it ships with. A committed document
+whose links rot is worse than one that never had them.
+
 ## 2. Think Before Coding
 
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
@@ -49,6 +56,12 @@ Before implementing:
 
 This is the cheapest moment to catch a misunderstanding. Five minutes
 of clarification beats two hours of rework.
+
+**On a bug, suspect your own recently-touched code FIRST.** Never
+edit a third-party or shared library on a hypothesis before you have
+audited your own diff and cleared it. The shared library has many
+users and few recent changes ; your diff has one user and many. Read
+the thing you just touched before you touch the thing you didn't.
 
 ## 3. Simplicity First
 
@@ -108,6 +121,16 @@ For multi-step tasks, state a brief plan with verification per step:
 Strong criteria let you loop independently. Weak criteria ("make it
 work") require constant clarification.
 
+Two assertion shapes that pass while the defect ships:
+
+- **A test that asserts only the *kind* of a thing cannot see a lost
+  payload.** Asserting that an intent parsed as `search` says nothing
+  about whether its argument survived. Assert the argument too.
+- **A test double carrying a method the real object does not have
+  doesn't miss the bug — it guarantees it.** The double must be no
+  richer than what it stands in for ; keep one test that exercises
+  the real type.
+
 ## 6. Verification Before Done
 
 **Never mark a task complete without proving it works.**
@@ -124,6 +147,36 @@ evidence, form a hypothesis, resolve it, verify.
 
 A task is not done until verification passes. "It compiles" isn't
 verification.
+
+**Absence of evidence is not evidence.** Three ways a measurement
+lies by omission:
+
+- **A log that does not instrument the suspected path can neither
+  confirm nor deny a defect on it** — and no lines is not a reading.
+  Before concluding from a quiet log, prove the log covers the path.
+- **A throw inside an event handler can vanish with no trace at
+  all.** No log line is not the same as no execution.
+- **When a verifier you wrote contradicts the user's direct
+  observation, distrust the tool, not the user**, and go get the
+  ground truth early. Your harness has one witness ; their screen
+  has another, and theirs is the product.
+
+**Trace from the reference, don't use the user as a console.** When
+the implementation you are matching has readable source — a reference
+implementation, an upstream bundle, a spec with code — a behavioural
+discrepancy is traced *from that code*. Asking the user to run one
+more probe and report back is slower, and it spends their attention
+on something you could have read.
+
+**Identify precisely before acting.** Two shortcuts that bite:
+
+- To tell two instances of the same binary apart, identify by
+  **listening port**, never by process name — a name-based match
+  catches the wrapper, the shell, and itself.
+- Before a destructive path command (`rm -rf <dir>`), move out of the
+  blast radius every artefact whose name shares a prefix with
+  `<dir>` — rename it, don't resolve to "be careful". A glob does not
+  know what you meant.
 
 ## 7. Subagent Strategy
 
@@ -192,6 +245,13 @@ aren't part of the commit itself — a commit is read by people without
 the plan open (reviewers, future-you, `git blame`). Plan IDs decay;
 the change description stays useful. Exception: the user explicitly
 asks for a plan reference in the message.
+
+**To commit one scope from a file that already carries unrelated
+WIP, stage only those lines** — `git diff` the hunks you want and
+`git apply --cached` them. Never the detour of backing the file up,
+`git checkout HEAD`, re-editing, committing, and restoring the
+backup: it destroys the working tree for the duration and loses
+anything not in the backup.
 
 ## 11. Devcontainer signals
 

@@ -14,23 +14,23 @@
 //   - no pidfile                          → write our PID, acquired:true
 //   - PID alive                           → ALWAYS REPLACE : SIGTERM, wait 2 s
 //                                            for graceful exit, SIGKILL fallback,
-//                                            then claim. Garantit que le nouveau
-//                                            code prend le relais à chaque
+//                                            then claim. Guarantees the new
+//                                            code takes over on every
 //                                            initialize.sh (reload / rebuild).
-//                                            Trade-off : timers debounce en
-//                                            cours sont perdus — OK pour ce
-//                                            daemon (état trivial, regenérable).
+//                                            Trade-off : in-flight debounce
+//                                            timers are lost — fine for this
+//                                            daemon (trivial, regenerable state).
 //   - PID dead (ESRCH)                    → claim with discovery enriched log
 //                                            (death window via mtime gap)
 //
-// `staleMs` n'est plus utilisé depuis le passage à always-replace (l'ancien
-// path "alive + stale → SIGKILL" est couvert par le SIGTERM + SIGKILL fallback
-// de always-replace). Gardé dans la signature pour backward-compat avec
-// index.js qui le passe toujours via HEARTBEAT_STALE_MS.
+// `staleMs` is no longer used since the move to always-replace (the old
+// "alive + stale → SIGKILL" path is covered by always-replace's SIGTERM +
+// SIGKILL fallback). Kept in the signature for backward-compat with
+// index.js, which still passes it via HEARTBEAT_STALE_MS.
 //
-// Le retour { acquired:false, pid } n'est plus jamais émis non plus —
-// always-replace claim systématiquement. Le filet `if (!lock.acquired)` dans
-// index.js reste comme sécurité défensive.
+// The { acquired:false, pid } return is never emitted either any more —
+// always-replace always claims. The `if (!lock.acquired)` net in
+// index.js stays as defensive safety.
 //
 // SIGUSR2 (Unix only) is wired in index.js, not here — the handler just calls
 // fs.utimesSync(pidFile, now, now) directly.
@@ -82,7 +82,7 @@ function acquire({ pidFile, staleMs }) {
 		return { acquired: true }
 	}
 
-	// ESRCH — PID dead → discovery enrichi avec death window
+	// ESRCH — PID dead → discovery enriched with the death window
 	const gap = Math.round((Date.now() - mtimeMs(pidFile)) / 1000)
 	log.info(`[lockfile] previous pid ${existingPid} dead — last heartbeat ${gap}s ago — claiming slot`)
 	writePid(pidFile)

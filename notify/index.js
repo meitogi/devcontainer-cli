@@ -172,9 +172,9 @@ const DOCKER_POLL_MS        = process.env.NOTIFY_DOCKER_POLL_MS !== undefined ? 
 const HEARTBEAT_INTERVAL_MS = 10_000  // touch .daemon.pid mtime every 10 s — liveness signal
 const HEARTBEAT_STALE_MS    = 30_000  // 3× interval — daemon considered zombie above this
 
-// Cleanup au boot : supprime les *.jsonl non touchés depuis N heures.
+// Cleanup at boot : deletes *.jsonl untouched for N hours.
 // Override .env via NOTIFY_CLEANUP_MAX_AGE_HOURS (parseFloat → fractions OK).
-// Pas de tick périodique — le daemon est respawné à chaque ouverture de container.
+// No periodic tick — the daemon is respawned on every container open.
 const CLEANUP_MAX_AGE_HOURS = parseFloat(process.env.NOTIFY_CLEANUP_MAX_AGE_HOURS) || 24
 const CLEANUP_MAX_AGE_MS    = CLEANUP_MAX_AGE_HOURS * 3_600_000
 
@@ -239,13 +239,13 @@ if (process.platform !== 'win32') {
 }
 process.on('SIGTERM', () => { log.info('received SIGTERM — shutting down'); shutdown(); process.exit(0) })
 process.on('SIGINT',  () => { log.info('received SIGINT — shutting down');  shutdown(); process.exit(0) })
-// SIGHUP : NO-OP (log seul). `nohup` à initialize.sh:672 pose SIG_IGN
-// avant exec, mais Node ÉCRASE cette disposition héritée dès qu'on
-// appelle process.on('SIGHUP', ...) — un handler vide (no shutdown)
-// rétablit l'ignore côté JS. Le daemon survit à la fermeture du
-// terminal qui a lancé initialize.sh (Cmd-W sur Mac, VS Code Window
-// Reload, "Press any key to close the terminal" puis fermeture auto).
-// SIGTERM/SIGINT restent shutdown-triggering — intent explicite, eux.
+// SIGHUP : NO-OP (log only). The `nohup` at initialize.sh:672 sets SIG_IGN
+// before exec, but Node OVERWRITES that inherited disposition as soon as
+// process.on('SIGHUP', ...) is called — an empty handler (no shutdown)
+// restores the ignore on the JS side. The daemon survives the closing of
+// the terminal that launched initialize.sh (Cmd-W on Mac, VS Code Window
+// Reload, "Press any key to close the terminal" then auto-close).
+// SIGTERM/SIGINT stay shutdown-triggering — those are explicit intent.
 process.on('SIGHUP',  () => log.info('SIGHUP ignored — daemon stays up'))
 
 const bus = new EventEmitter()
@@ -269,10 +269,10 @@ const fireDaemonStopped = (reason) => {
 // so suppressBackfill only sees the surviving set. Synchronous, idempotent.
 cleanup.run({ queueDir, maxAgeMs: CLEANUP_MAX_AGE_MS })
 
-// SLEEP DETECTION — émet 'system:wake' sur saut de Date.now() ; consommé
-// par docker-watch pour suppress container:gone pendant la grâce post-wake.
-// Démarré avant watcher / dockerWatch pour qu'à la première seconde de vie
-// du daemon, le drift watcher tourne déjà — pas de race possible.
+// SLEEP DETECTION — emits 'system:wake' on a Date.now() jump ; consumed
+// by docker-watch to suppress container:gone during the post-wake grace.
+// Started before watcher / dockerWatch so that in the daemon's first second
+// of life the drift watcher is already running — no race possible.
 sleepWatch.start({ bus })
 
 // STATE — initialize queue/state/ (pending.json reset to empty + actions.jsonl
@@ -350,14 +350,15 @@ process.on('uncaughtException', (err) => {
 	process.exit(1)
 })
 
-// Promises non gérées : Node n'exit pas par défaut, on log juste pour diag.
+// Unhandled promises : Node does not exit by default, we just log for diag.
 process.on('unhandledRejection', (reason) => {
 	log.error(`unhandledRejection: ${reason && reason.stack || reason}`)
 })
 
-// Filet final : tire sur toute sortie synchrone (exit volontaire ou code
-// d'erreur Node). NE tire PAS sur SIGKILL/SIGSTOP/host kill — c'est documenté
-// Node, aucun workaround côté daemon. Le death window se déduit alors via
+// Final net : fires on any synchronous exit (deliberate exit or Node error
+// code). Does NOT fire on SIGKILL/SIGSTOP/host kill — that is documented
+// Node behaviour, no workaround on the daemon side. The death window is then
+// derived via
 // `[lockfile] previous pid X dead — last heartbeat Ys ago` au prochain spawn.
 process.on('exit', (code) => {
 	log.info(`process exit code=${code}`)

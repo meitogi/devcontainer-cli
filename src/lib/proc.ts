@@ -54,7 +54,7 @@ export interface RunResult {
  * Spawn a command, stream its merged output line by line, resolve its exit code.
  *
  * `shell: false` always — there is no shell to need, and array argv sidesteps
- * the Windows quoting minefield entirely (design §7 "Node pur, spawn avec
+ * the Windows quoting minefield entirely (design §7 "pure Node, spawn with
  * array args").
  *
  * stdin is `ignore` rather than `inherit`: a `docker build` that inherited the
