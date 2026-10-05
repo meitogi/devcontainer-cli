@@ -1,0 +1,82 @@
+# Purpose: example of per-host override on top of policy.d/api.anthropic.com.yaml.
+# Copy to policy.local.d/api.anthropic.com.yaml and adapt.
+#
+# What can be overridden:
+#   - top-level keys REPLACE the committed value (endpoints, blocked_paths,
+#     max_body_size_kb, allowed_header_patterns, defaults_override…)
+#   - because keys REPLACE, removing a single endpoint = redeclare the full
+#     list MINUS the one you want gone (cf. Override 3)
+#
+# Precedence: this file LAST = highest priority. Loaded after domains.local.txt.
+
+# Override 1 — relax body limit for /v1/files (e.g. larger document uploads).
+endpoints:
+  - path: "^/v1/messages$"
+    methods: [POST]
+    max_body_kb: 20480
+
+  - path: "^/v1/files(/.*)?$"
+    methods: [POST, GET, DELETE]
+    max_body_kb: 100000              # bump from 50 MB to 100 MB
+
+  - path: "^/v1/(usage|models|organizations)(/.*)?$"
+    methods: [GET]
+
+
+# Override 2 — relax a defaults check for THIS host only (rare).
+# defaults_override:
+#   detect_internal_path_leak: false   # if your project sends paths like /home/...
+#   max_query_string_length: 4096      # very long URL params
+#   enforcement_mode: warn             # AUDIT mode: log violations to
+#                                      #   /var/log/mitmproxy-blocks.log
+#                                      #   tagged "mode":"warn" but let the
+#                                      #   request pass to upstream. Use this
+#                                      #   while figuring out what a workload
+#                                      #   actually needs (paths, headers,
+#                                      #   methods). Promote to `block` once
+#                                      #   you've collected the rules from
+#                                      #   `firewall-blocks` output. Can also
+#                                      #   be set per-endpoint inside
+#                                      #   `endpoints[].defaults_override`
+#                                      #   (e.g. warn on /experimental/* while
+#                                      #   blocking elsewhere).
+
+
+# Override 3 — OPT OUT of Claude Code telemetry.
+# The committed policy.d/api.anthropic.com.yaml allows POST on
+# `/api/event_logging/v2/batch` so the CLI / SDK can ship event batches AND
+# accepts `X-Service-Name` + `X-Claude-Code-*` request headers. There is
+# also a `/api/.+` catch-all (Claude Code bootstrap, eval, OAuth, feature
+# flags…) — to disable telemetry surgically we have to keep the catch-all
+# but exclude event_logging via negative lookahead.
+#
+#   endpoints:
+#     - path: "^/v1/messages$"
+#       methods: [POST]
+#       max_body_kb: 20480
+#     - path: "^/v1/complete$"
+#       methods: [POST]
+#       max_body_kb: 20480
+#     - path: "^/v1/files(/.*)?$"
+#       methods: [POST, GET, DELETE]
+#       max_body_kb: 50000
+#     - path: "^/v1/(usage|models|organizations)(/.*)?$"
+#       methods: [GET]
+#     - path: "^/v1/mcp_servers(/.*)?$"
+#       methods: [GET]
+#     - path: "^/mcp-registry/.+$"
+#       methods: [GET]
+#     # /api/event_logging dropped, catch-all rewritten to exclude it :
+#     - path: "^/api/(?!event_logging).+$"
+#       methods: [GET, POST]
+#       max_body_kb: 1024
+#
+#   allowed_header_patterns:
+#     - "^X-(Api|Anthropic|Stainless)-?"    # drop Service|Claude
+#                                            # => x-api-key still passes (auth works)
+#                                            # => X-Claude-Code-Session-Id hits 403 blocked_header
+#                                            #    (chat completion still succeeds — header optional)
+#
+# Verify after rebuild : run `firewall-blocks --follow` while using Claude Code,
+# you should see `endpoint_not_matched:/api/event_logging/v2/batch` blocks
+# accumulate but core /v1/messages requests stay green.

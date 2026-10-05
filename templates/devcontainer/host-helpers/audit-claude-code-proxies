@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Audit Claude Code → local-model proxies for freshness.
+#
+# Queries GitHub API (unauthenticated, 60 req/hr limit) for a curated list
+# of candidate proxies. For each repo dumps : last push date, star count,
+# open issues, last commit, releases. Outputs a comparison table sorted by
+# freshness so we can pick the one most likely to support Claude Code's
+# current version (2.1.145).
+#
+# Output goes to .devcontainer/tmp/logs/proxy-audit-<ts>.log — bind-mounted, so
+# Claude Code inside the container can read it too.
+#
+# Usage : bash .devcontainer/host-helpers/audit-claude-code-proxies
+set -uo pipefail
+
+if [ -f /.dockerenv ] || [ -n "${REMOTE_CONTAINERS:-}" ]; then
+  echo "ERROR: This script must run on the HOST (Mac/Linux), not inside the container." >&2
+  echo "       The container's firewall blocks api.github.com beyond narrow GET paths." >&2
+  exit 2
+fi
+
+command -v curl >/dev/null 2>&1 || { echo "ERROR: curl not found in PATH" >&2; exit 2; }
+command -v jq   >/dev/null 2>&1 || { echo "ERROR: jq not found in PATH (brew install jq)" >&2; exit 2; }
+
+DEVCONTAINER_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+mkdir -p "$DEVCONTAINER_DIR/tmp/logs"
+TS=$(date +%Y%m%d-%H%M%S)
+LOG="$DEVCONTAINER_DIR/tmp/logs/proxy-audit-${TS}.log"
+exec > >(tee -a "$LOG") 2>&1
+
+# Candidates — extend this list if you find more relevant projects.
+REPOS=(
+  "nielspeter/claude-code-proxy"
+  "vibheksoni/UniClaudeProxy"
+  "mattlqx/claude-code-ollama-proxy"
+  "1rgs/claude-code-proxy"
+  "fuergaosi233/claude-code-proxy"
+  "raine/claude-code-proxy"
+)
+
+hr() { printf '\n──── %s ────\n' "$*"; }
+
+echo "=== audit-claude-code-proxies $(date) ==="
+echo "log : ${LOG}"
+echo "Claude Code version we want to support : 2.1.145"
+echo
+
+# Per-repo deep dive.
+for repo in "${REPOS[@]}"; do
+  hr "$repo"
+
+  meta=$(curl -sS "https://api.github.com/repos/${repo}")
+  if echo "$meta" | jq -e '.message' >/dev/null 2>&1; then
+    echo "✗ API error : $(echo "$meta" | jq -r '.message')"
+    continue
+  fi
+
+  echo "$meta" | jq -r '
+    "stars         : " + (.stargazers_count|tostring),
+    "forks         : " + (.forks_count|tostring),
+    "open issues   : " + (.open_issues_count|tostring),
+    "pushed_at     : " + .pushed_at,
+    "updated_at    : " + .updated_at,
+    "default branch: " + .default_branch,
+    "license       : " + ((.license.spdx_id // "none")),
+    "description   : " + (.description // "(none)"),
+    "homepage      : " + ((.homepage // "(none)"))
+  '
+
+  echo "── last 3 commits ──"
+  curl -sS "https://api.github.com/repos/${repo}/commits?per_page=3" \
+    | jq -r '.[] | "  " + .commit.author.date + "  " + (.commit.message | split("\n")[0] | .[0:80])' \
+    2>/dev/null || echo "  (could not fetch commits)"
+
+  echo "── releases (latest 3) ──"
+  rel=$(curl -sS "https://api.github.com/repos/${repo}/releases?per_page=3")
+  if [ "$(echo "$rel" | jq 'length')" = "0" ]; then
+    echo "  (no releases — pin to a commit SHA if you use this)"
+  else
+    echo "$rel" | jq -r '.[] | "  " + .tag_name + "  (" + .published_at + ")  " + (.name // "")'
+  fi
+done
+
+# Synthesis table — one line per repo, sorted by pushed_at desc.
+hr "SUMMARY (sorted by freshness, most recent push first)"
+printf '%-45s  %-22s  %-7s  %s\n' "REPO" "PUSHED_AT" "STARS" "DESCRIPTION (truncated)"
+printf '%-45s  %-22s  %-7s  %s\n' "$(printf '%.0s-' {1..45})" "$(printf '%.0s-' {1..22})" "-------" "$(printf '%.0s-' {1..50})"
+for repo in "${REPOS[@]}"; do
+  meta=$(curl -sS "https://api.github.com/repos/${repo}")
+  echo "$meta" | jq -r --arg r "$repo" '
+    [$r, .pushed_at, (.stargazers_count|tostring), ((.description // "")[0:50])] | @tsv'
+done | sort -k2 -r | awk -F'\t' '{printf "%-45s  %-22s  %-7s  %s\n", $1, $2, $3, $4}'
+
+hr "DONE"
+echo "Log saved : $LOG"
+echo "Share it (or copy/paste this terminal output) for analysis."

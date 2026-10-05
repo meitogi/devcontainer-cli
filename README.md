@@ -23,7 +23,7 @@ it walks `devc init` question by question.
 
 ## Status
 
-`0.6.0` — four real commands, published on npm.
+`0.7.0` — four real commands, published on npm.
 
 | Command | State |
 |---|---|
@@ -82,10 +82,11 @@ guess the stack, then asks — saying what each answer is used for:
    shared one, or a private per-project one.
 5. **Claude Code line** — which published `<base>-cc<claude-code>` image.
 
-Then it writes the thin project layer (~26 files: `devcontainer.json`,
+Then it writes the thin project layer (~45 files: `devcontainer.json`,
 `Dockerfile`, `docker-compose.yml`, `.env`, `initialize.sh`, the firewall
-allowlist, the hook and skill overlay directories, `claude/CLAUDE-*.md`, a blank
-`LESSONS.md`), appends a fragment to the root `.gitignore`, links `LESSONS.md`
+allowlist and its worked `policy.local.d.example/`, the hook and skill overlay
+directories, `claude/CLAUDE-*.md`, the host-side helpers, the generic test
+harness, a blank `LESSONS.md`), appends a fragment to the root `.gitignore`, links `LESSONS.md`
 and `.claude/rules/*` at the root, adds itself as a devDependency to the root
 `package.json` and runs `npm install` — so the `npx --yes
 --package=@meitogi/devcontainer-cli@0.x devc initialize` that `initialize.sh`

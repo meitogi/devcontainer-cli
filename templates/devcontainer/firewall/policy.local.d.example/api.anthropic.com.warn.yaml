@@ -1,0 +1,10 @@
+# Copy to policy.local.d/api.anthropic.com.yaml (drop the `.warn` part of
+# the filename — policy.local.d/ accepts one file per host).
+#
+# Put ONLY api.anthropic.com in audit mode while every other host stays in
+# strict block mode. Useful when iterating on Claude Code's evolving API
+# surface — see what would fail, decide what to allow, then remove this
+# file to re-tighten.
+
+defaults_override:
+  enforcement_mode: warn

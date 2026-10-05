@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Start `ollama serve` on the host with settings for ~20 GB MoE/dense models
+# (qwen3.6-35b-a3b, qwen3:32b, deepseek-coder-v2:33b, …) at 32k context, on a
+# 32 GB Mac.
+#
+# Tier above ollama-serve-16k : more RAM headroom = larger model + double
+# context. Aliasing approach (single-force vs multi-alias) is independent —
+# see /opt/devcontainer/base/knowledge/ollama-local.md § "Default model name mapping".
+#
+# What it tunes vs the 16k tier :
+#   CONTEXT_LENGTH=32768    32k default ctx (~25k usable after Claude Code's system prompt)
+#   KEEP_ALIVE=1h           longer cache window — bigger models cost more to cold-load
+#
+# Unchanged from 16k tier (still single-slot for safety on 32 GB) :
+#   FLASH_ATTENTION=1, KV_CACHE_TYPE=q8_0, MAX_LOADED_MODELS=1, NUM_PARALLEL=1
+#
+# RAM budget qwen3.6-35b-a3b (Q4 ~20 GB) + 32k q8 KV (~4 GB) + ~2 GB overhead ≈ 26 GB.
+# Comfortable on 32 GB. If you have 48 GB+ and want concurrency, bump
+# MAX_LOADED_MODELS=2 / NUM_PARALLEL=2 — each extra parallel slot adds another
+# ~4 GB of KV cache.
+#
+# Caveat : port 11434 conflict — quit Ollama desktop app first.
+#
+# Usage :
+#   [host] bash .devcontainer/host-helpers/ollama-serve-32k
+
+set -euo pipefail
+
+if [ -f /.dockerenv ] || [ -n "${REMOTE_CONTAINERS:-}" ]; then
+  echo "ERROR: This script must run on the host, not inside the container." >&2
+  exit 2
+fi
+
+# Defaults below — override per-invocation by setting the env var before
+# calling the script, e.g. : `OLLAMA_CONTEXT_LENGTH=65536 bash ollama-serve-32k`.
+export OLLAMA_FLASH_ATTENTION="${OLLAMA_FLASH_ATTENTION:-1}"
+export OLLAMA_KV_CACHE_TYPE="${OLLAMA_KV_CACHE_TYPE:-q8_0}"
+export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-32768}"
+export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-1h}"
+export OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"
+export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-1}"
+
+echo "Starting ollama serve with :"
+echo "  OLLAMA_FLASH_ATTENTION    = $OLLAMA_FLASH_ATTENTION"
+echo "  OLLAMA_KV_CACHE_TYPE      = $OLLAMA_KV_CACHE_TYPE"
+echo "  OLLAMA_CONTEXT_LENGTH     = $OLLAMA_CONTEXT_LENGTH"
+echo "  OLLAMA_KEEP_ALIVE         = $OLLAMA_KEEP_ALIVE"
+echo "  OLLAMA_MAX_LOADED_MODELS  = $OLLAMA_MAX_LOADED_MODELS"
+echo "  OLLAMA_NUM_PARALLEL       = $OLLAMA_NUM_PARALLEL"
+echo
+
+exec ollama serve

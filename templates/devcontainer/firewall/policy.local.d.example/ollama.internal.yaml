@@ -1,0 +1,48 @@
+# === POLICY PARITY ===
+# The /v1/messages block below is a STRICT 1:1 mirror of the same block in
+# policy.d/api.anthropic.com.yaml. Same methods (POST), same max_body_kb
+# (32768), same allowed_header_patterns. Ollama-native paths (/api/version,
+# /api/tags) extend the baseline but cannot weaken /v1/messages — Claude Code
+# emits identical request shapes against both targets.
+# If you change /v1/messages constraints here, mirror to api.anthropic.com.yaml
+# and policy.d/claude-bridge.yaml. See /opt/devcontainer/base/knowledge/INDEX.md
+# "Policy parity across Claude Code targets" for the cross-target rule.
+
+# Purpose: advanced rules for the local Ollama backend (Anthropic Messages
+# compat, Ollama ≥ v0.14.0). Routed via mitmproxy when the user uses the
+# `ollama.internal` alias (the default — `.local` would bypass NO_PROXY).
+# Consumed by the mitmproxy addons. Merged on top of methods + paths declared
+# in domains.txt.
+# Body-size limit mirrors api.anthropic.com.yaml for parity with the cloud
+# endpoint — same prompts size in either mode.
+# Setup + daily usage: /opt/devcontainer/base/knowledge/ollama-local.md
+
+endpoints:
+  - path: "^/v1/messages$"
+    methods: [POST]
+    max_body_kb: 32768              # 32 MB — parity with Anthropic cloud
+                                    # /v1/messages ceiling.
+
+  - path: "^/api/version$"
+    methods: [GET]                  # Read-only server version probe.
+                                    # Used by validation suite + sanity checks.
+
+  - path: "^/api/tags$"
+    methods: [GET]                  # Read-only list of locally pulled models.
+                                    # Useful before `ollama cp <name>` aliasing.
+
+# Claude Code sends the same Anthropic vendor headers (X-Api-Key,
+# X-Anthropic-*, X-Stainless-*, X-Claude-Code-Session-Id, …) regardless of
+# the destination — they're built by the Anthropic SDK before knowing which
+# base URL it'll hit. Even if Ollama itself ignores unknown X-*, mitmproxy
+# enforces `blocked_header_patterns` BEFORE the request reaches Ollama, and
+# would 403 with `blocked_header:X-Stainless-Lang,...` unless we mirror the
+# api.anthropic.com allowlist here.
+# Streaming SSE responses are passed through by addons/stream_sse.py.
+allowed_header_patterns:
+  - "^X-(Api|Anthropic|Service|Claude|Stainless|App|Client|Organization)-?"
+
+defaults_override:
+  enforcement_mode: block             # Strict mode. Flip to `warn` temporarily
+                                      # while discovering new path patterns
+                                      # introduced by future Ollama releases.

@@ -6,12 +6,18 @@
 // tree. `applyPlan` is the only function here that writes.
 //
 // What is NOT here says as much as what is. install.sh dropped 364 files into
-// a project; a v3 project owns ~25, because everything else — hooks, skills,
+// a project; a v3 project owns ~45, because everything else — hooks, skills,
 // knowledge, firewall infrastructure, the toolchain — lives in the published
 // base image and is inherited at runtime. The templates directory is the
 // complete list.
+//
+// The count grew from ~25 with 0.7.0: the host-side helpers and the generic
+// test harness moved here from the projects that had been copying them. They
+// belong to the CLI and not to the image for one structural reason — they run
+// on the HOST, and an image cannot put a file on someone's Mac.
 
 import {
+	chmodSync,
 	existsSync,
 	lstatSync,
 	mkdirSync,
@@ -64,7 +70,70 @@ export const OWNERSHIP: Readonly<Record<string, Ownership>> = {
 	'.devcontainer/hooks/post-start.d/README.md': 'seed',
 	'.devcontainer/skills/disabled.txt': 'seed',
 	'.claude/settings.local.json': 'user',
+
+	// The host-side helpers. They run on the HOST, not in the container — the
+	// image cannot put a file on someone's Mac — and a project edits them, so
+	// `seed`: written once with real content, then theirs.
+	'.devcontainer/host-helpers/audit-claude-code-proxies': 'seed',
+	'.devcontainer/host-helpers/claude-switch': 'seed',
+	'.devcontainer/host-helpers/docker-audit.sh': 'seed',
+	'.devcontainer/host-helpers/mitm-capture': 'seed',
+	'.devcontainer/host-helpers/ollama-serve-16k': 'seed',
+	'.devcontainer/host-helpers/ollama-serve-32k': 'seed',
+
+	// Two more rule sheets beside CLAUDE-dev / CLAUDE-project, same class.
+	'.devcontainer/claude/CLAUDE-reviewer.md': 'seed',
+	'.devcontainer/claude/CLAUDE-local-dev.md': 'seed',
+
+	// The test harness is generic; the CASES are the project's. So the runner,
+	// the assertion library and the README ship here, and `test-*.sh` files
+	// stay with whoever writes them. `seed` for the same reason as above: the
+	// first `tests/unit/test-*.sh` a project adds makes the tree theirs.
+	'.devcontainer/tests/run.sh': 'seed',
+	'.devcontainer/tests/lib.sh': 'seed',
+	'.devcontainer/tests/README.md': 'seed',
+	'.devcontainer/tests/validate-claude-switch.sh': 'seed',
+	'.devcontainer/tests/integration/test-claude-switch.sh': 'seed',
+
+	// Worked examples of the local policy layer, never active config — the
+	// directory the firewall reads is `policy.local.d/`, without `.example`.
+	'.devcontainer/firewall/policy.local.d.example/README.md': 'seed',
+	'.devcontainer/firewall/policy.local.d.example/api.anthropic.com.yaml': 'seed',
+	'.devcontainer/firewall/policy.local.d.example/api.anthropic.com.warn.yaml': 'seed',
+	'.devcontainer/firewall/policy.local.d.example/claude-bridge.yaml': 'seed',
+	'.devcontainer/firewall/policy.local.d.example/ollama.internal.yaml': 'seed',
 }
+
+/**
+ * Files the project must be able to execute.
+ *
+ * `applyPlan` writes with `writeFileSync`, which takes the process umask and
+ * produces 0644 — fine for every file the scaffold had until the host helpers
+ * and the test runner arrived, and silently wrong for those: `./claude-switch`
+ * would simply not run, for everyone, and the failure reads as "permission
+ * denied" rather than as a scaffold bug.
+ *
+ * A declared list, not the template file's own mode: npm's tarball is not a
+ * guaranteed carrier of the execute bit, so deriving the mode from disk would
+ * pass every test in this repository and still land 0644 out of a registry
+ * install — a false green of exactly the shape this scaffold keeps finding.
+ *
+ * `initialize.sh` is deliberately NOT here: it ships 0644 and is invoked as
+ * `bash .devcontainer/initialize.sh` by `devcontainer.json`, so it has never
+ * needed the bit, and giving it one now would change a working contract for
+ * no reason.
+ */
+export const EXECUTABLE: ReadonlySet<string> = new Set([
+	'.devcontainer/host-helpers/audit-claude-code-proxies',
+	'.devcontainer/host-helpers/claude-switch',
+	'.devcontainer/host-helpers/docker-audit.sh',
+	'.devcontainer/host-helpers/mitm-capture',
+	'.devcontainer/host-helpers/ollama-serve-16k',
+	'.devcontainer/host-helpers/ollama-serve-32k',
+	'.devcontainer/tests/run.sh',
+	'.devcontainer/tests/validate-claude-switch.sh',
+	'.devcontainer/tests/integration/test-claude-switch.sh',
+])
 
 export interface ScaffoldAnswers {
 	projectId: string
@@ -80,6 +149,8 @@ export interface PlannedFile {
 	path: string
 	content: string
 	ownership: Ownership
+	/** Written 0755 instead of 0644. See `EXECUTABLE`. */
+	executable: boolean
 }
 
 export interface PlannedSymlink {
@@ -125,7 +196,12 @@ export function buildPlan(answers: ScaffoldAnswers, templatesDir = TEMPLATES_DIR
 	const files: PlannedFile[] = walk(root).map((relative) => {
 		const path = `.devcontainer/${relative.split('/').map(scaffoldName).join('/')}`
 		const source = readFileSync(join(root, ...relative.split('/')), 'utf8')
-		return { path, content: render(source, values, relative), ownership: OWNERSHIP[path] ?? 'managed' }
+		return {
+			path,
+			content: render(source, values, relative),
+			ownership: OWNERSHIP[path] ?? 'managed',
+			executable: EXECUTABLE.has(path),
+		}
 	})
 
 	// .env — the rendered .env.example with the answers made live on their own
@@ -137,13 +213,13 @@ export function buildPlan(answers: ScaffoldAnswers, templatesDir = TEMPLATES_DIR
 	if (answers.claudeCodeVersion !== DEFAULT_CLAUDE_CODE_VERSION) {
 		env = applyUncomment(env, 'BASE_IMAGE', baseImageRef(answers.claudeCodeVersion))
 	}
-	files.push({ path: '.devcontainer/.env', content: env, ownership: 'user' })
+	files.push({ path: '.devcontainer/.env', content: env, ownership: 'user', executable: false })
 
 	// Root-side: the read-only permissions baseline, example refreshed by the
 	// CLI, live copy the user's (install.sh's install_claude_settings).
 	const settings = readFileSync(join(templatesDir, 'root', 'claude-settings.local.json.example'), 'utf8')
-	files.push({ path: '.claude/settings.local.json.example', content: settings, ownership: 'managed' })
-	files.push({ path: '.claude/settings.local.json', content: settings, ownership: 'user' })
+	files.push({ path: '.claude/settings.local.json.example', content: settings, ownership: 'managed', executable: false })
+	files.push({ path: '.claude/settings.local.json', content: settings, ownership: 'user', executable: false })
 
 	// Code-point order, not localeCompare: the latter folds case by locale, and
 	// the plan's order must be the same on every machine.
@@ -303,6 +379,10 @@ export function applyPlan(options: ApplyOptions): ApplyResult {
 		if (!dryRun) {
 			mkdirSync(dirname(abs), { recursive: true })
 			writeFileSync(abs, file.content, 'utf8')
+			// After the write, not a `mode` option: writeFileSync's mode is
+			// masked by the umask, so 0755 there yields 0755 & ~umask — 0750
+			// under the common 0027. chmod is not.
+			if (file.executable) chmodSync(abs, 0o755)
 		}
 		result.written.push(file.path)
 	}

@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# Toggle the capture_messages_debug.py mitmproxy addon — captures every POST
+# /v1/messages* request body for ollama.internal + api.anthropic.com into
+# /tmp/claude-capture/ as a ready-to-replay curl script + .json body.
+#
+# The addon is always loaded by mitm-init.sh but does nothing until the
+# sentinel file /tmp/claude-capture/.enabled exists. This wrapper toggles
+# the sentinel without needing to docker exec into the container.
+#
+# Runs on the HOST. Targets the devcontainer's running mitmproxy via the
+# bind-mounted .devcontainer/pending/ directory if needed, but mostly just
+# calls docker exec to touch/rm the sentinel inside /tmp/claude-capture/
+# (which lives in the container's tmpfs, NOT bind-mounted to host).
+#
+# Usage :
+#   [host] bash .devcontainer/host-helpers/mitm-capture {on|off|status|ls|clear}
+#
+#   on      : enable capture (touch sentinel)
+#   off     : disable capture (rm sentinel)
+#   status  : show on/off + count of captured files
+#   ls      : list captured .json files with size + timestamp
+#   clear   : rm all captured files (keeps sentinel state)
+set -euo pipefail
+
+if [ -f /.dockerenv ] || [ -n "${REMOTE_CONTAINERS:-}" ]; then
+  echo "ERROR: run on the host, not inside the container." >&2
+  exit 2
+fi
+
+# Find the running `app` container of the devcontainer compose project.
+# Primary : `docker compose ps -q app` (cleanest, no name-matching).
+# Fallback : substring scan on the docker ps name list — supports the
+# legacy "devcontainer-…" naming and the current compose-named pattern
+# "<project>-claude-code-app-1".
+COMPOSE_FILE="$(cd "$(dirname "$0")/.." && pwd)/docker-compose.yml"
+CONTAINER=$(docker compose -f "$COMPOSE_FILE" ps -q app 2>/dev/null | head -1)
+if [ -z "$CONTAINER" ]; then
+  CONTAINER=$(docker ps --format '{{.ID}} {{.Names}}' \
+    | awk '/(devcontainer|claude-code-app-1|claude-code_app_1)/ {print $1; exit}')
+fi
+if [ -z "$CONTAINER" ]; then
+  echo "ERROR: app container not found." >&2
+  echo "       Tried 'docker compose -f $COMPOSE_FILE ps -q app' (empty) and" >&2
+  echo "       docker ps name scan (no match on devcontainer|claude-code-app-1)." >&2
+  echo "       Is the devcontainer running ?" >&2
+  exit 1
+fi
+
+SENTINEL=/tmp/claude-capture/.enabled
+CAPTURE_DIR=/tmp/claude-capture
+
+case "${1:-}" in
+  on)
+    # -u 0 (root) needed because /tmp/claude-capture may have been created
+    # by the mitmproxy process under a different UID — chmod 1777 then
+    # fails for the default `node` user. Root can always chmod.
+    docker exec -u 0 "$CONTAINER" bash -c "mkdir -p $CAPTURE_DIR && chmod 1777 $CAPTURE_DIR && touch $SENTINEL && chmod 666 $SENTINEL"
+    echo "✓ mitm capture ENABLED (sentinel : $SENTINEL inside container)"
+    echo "  Next /v1/messages POST will write a curl + .json into $CAPTURE_DIR."
+    ;;
+  off)
+    docker exec -u 0 "$CONTAINER" bash -c "rm -f $SENTINEL"
+    echo "✗ mitm capture DISABLED (sentinel removed, addon is now no-op)"
+    ;;
+  status)
+    if docker exec "$CONTAINER" bash -c "test -f $SENTINEL"; then
+      STATE="ENABLED"
+    else
+      STATE="disabled"
+    fi
+    COUNT=$(docker exec "$CONTAINER" bash -c "ls $CAPTURE_DIR/*.json 2>/dev/null | wc -l" || echo 0)
+    echo "  state    : $STATE"
+    echo "  captured : $COUNT .json file(s) in $CAPTURE_DIR"
+    ;;
+  ls)
+    docker exec "$CONTAINER" bash -c "ls -lha $CAPTURE_DIR/*.json 2>/dev/null" \
+      || echo "(no captures yet)"
+    ;;
+  clear)
+    docker exec -u 0 "$CONTAINER" bash -c "rm -f $CAPTURE_DIR/*.json $CAPTURE_DIR/*.sh $CAPTURE_DIR/*.resp $CAPTURE_DIR/*.response"
+    echo "✓ cleared all .json/.sh/.resp/.response files (sentinel preserved)"
+    ;;
+  *)
+    cat >&2 <<EOF
+usage: bash .devcontainer/host-helpers/mitm-capture {on|off|status|ls|clear}
+
+  on      enable capture (touch sentinel file in container)
+  off     disable capture (rm sentinel; addon becomes no-op)
+  status  show state + count of captured files
+  ls      list captured .json files
+  clear   rm all captured files (sentinel preserved)
+EOF
+    exit 1
+    ;;
+esac

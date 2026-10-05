@@ -3,7 +3,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { readDevcontainerJson, readStitchuCustomizations } from '../src/lib/devcontainer-json.js'
@@ -14,6 +14,7 @@ import {
 	buildPlan,
 	classifyTarget,
 	diffPlan,
+	EXECUTABLE,
 	OWNERSHIP,
 	type ScaffoldAnswers,
 } from '../src/lib/scaffold.js'
@@ -37,7 +38,9 @@ const EXPECTED_FILES = [
 	'.devcontainer/Dockerfile',
 	'.devcontainer/LESSONS.md',
 	'.devcontainer/claude/CLAUDE-dev.md',
+	'.devcontainer/claude/CLAUDE-local-dev.md',
 	'.devcontainer/claude/CLAUDE-project.md',
+	'.devcontainer/claude/CLAUDE-reviewer.md',
 	'.devcontainer/devcontainer.json',
 	'.devcontainer/docker-compose.yml',
 	'.devcontainer/firewall/CLAUDE.md',
@@ -46,13 +49,29 @@ const EXPECTED_FILES = [
 	'.devcontainer/firewall/domains.local.txt.example',
 	'.devcontainer/firewall/domains.txt',
 	'.devcontainer/firewall/policy.d/README.md',
+	'.devcontainer/firewall/policy.local.d.example/README.md',
+	'.devcontainer/firewall/policy.local.d.example/api.anthropic.com.warn.yaml',
+	'.devcontainer/firewall/policy.local.d.example/api.anthropic.com.yaml',
+	'.devcontainer/firewall/policy.local.d.example/claude-bridge.yaml',
+	'.devcontainer/firewall/policy.local.d.example/ollama.internal.yaml',
 	'.devcontainer/firewall/ports.txt',
 	'.devcontainer/hooks/disabled.txt',
 	'.devcontainer/hooks/on-create.d/README.md',
 	'.devcontainer/hooks/post-create.d/README.md',
 	'.devcontainer/hooks/post-start.d/README.md',
+	'.devcontainer/host-helpers/audit-claude-code-proxies',
+	'.devcontainer/host-helpers/claude-switch',
+	'.devcontainer/host-helpers/docker-audit.sh',
+	'.devcontainer/host-helpers/mitm-capture',
+	'.devcontainer/host-helpers/ollama-serve-16k',
+	'.devcontainer/host-helpers/ollama-serve-32k',
 	'.devcontainer/initialize.sh',
 	'.devcontainer/skills/disabled.txt',
+	'.devcontainer/tests/README.md',
+	'.devcontainer/tests/integration/test-claude-switch.sh',
+	'.devcontainer/tests/lib.sh',
+	'.devcontainer/tests/run.sh',
+	'.devcontainer/tests/validate-claude-switch.sh',
 	'.devcontainer/vscode-settings.jsonc',
 	'.devcontainer/zshrc.local.example',
 ]
@@ -76,12 +95,42 @@ test('the plan is exactly the D15 tree', () => {
 			'.claude/rules/project.md -> ../../.devcontainer/claude/CLAUDE-project.md',
 		],
 	)
-	assert.equal(plan.imageRef, 'ghcr.io/meitogi/devcontainer-sandbox:1.7.1-cc2.1.280')
+	assert.equal(plan.imageRef, 'ghcr.io/meitogi/devcontainer-sandbox:1.8.0-cc2.1.280')
 })
 
 test('every ownership entry names a file the plan produces', () => {
 	const paths = new Set(buildPlan(ANSWERS).files.map((file) => file.path))
 	for (const path in OWNERSHIP) assert.ok(paths.has(path), `${path} is in OWNERSHIP but not in the plan`)
+})
+
+test('every executable entry names a file the plan produces, and the plan marks exactly those', () => {
+	const files = buildPlan(ANSWERS).files
+	const paths = new Set(files.map((file) => file.path))
+	for (const path of EXECUTABLE) assert.ok(paths.has(path), `${path} is in EXECUTABLE but not in the plan`)
+	assert.deepEqual(
+		files.filter((file) => file.executable).map((file) => file.path),
+		[...EXECUTABLE].sort(),
+	)
+})
+
+test('an executable file lands executable, and an ordinary one does not', () => {
+	const { dir, cleanup } = scratch()
+	try {
+		applyPlan({ projectDir: dir, plan: buildPlan(ANSWERS), dryRun: false })
+		// The bit, not `access(X_OK)`: a Docker Desktop `fakeowner` mount reports
+		// every file executable to access(2), so the weaker check passes on a
+		// 0644 file and the assertion would be worthless exactly where this
+		// repository is developed.
+		const mode = (p: string) => statSync(join(dir, ...p.split('/'))).mode & 0o777
+		assert.equal(mode('.devcontainer/host-helpers/claude-switch'), 0o755)
+		assert.equal(mode('.devcontainer/tests/run.sh'), 0o755)
+		// Sourced, never run — and the counter-case that proves the chmod is
+		// driven by the list rather than applied to everything.
+		assert.equal(mode('.devcontainer/tests/lib.sh') & 0o111, 0)
+		assert.equal(mode('.devcontainer/Dockerfile') & 0o111, 0)
+	} finally {
+		cleanup()
+	}
 })
 
 test('devcontainer.json renders parseable, with the stitchu block and the shim initializeCommand', () => {
@@ -115,7 +164,7 @@ test('.env carries the answers live on their documented lines', () => {
 	const shared = buildPlan({ ...ANSWERS, credsVolume: 'claude-creds-team', claudeCodeVersion: '2.1.220' })
 	const env = shared.files.find((file) => file.path === '.devcontainer/.env')?.content ?? ''
 	assert.match(env, /^CLAUDE_CREDS_VOLUME=claude-creds-team$/m)
-	assert.match(env, /^BASE_IMAGE=ghcr\.io\/meitogi\/devcontainer-sandbox:1\.7\.1-cc2\.1\.220$/m)
+	assert.match(env, /^BASE_IMAGE=ghcr\.io\/meitogi\/devcontainer-sandbox:1\.8\.0-cc2\.1\.220$/m)
 	// The example itself stays a template of commented defaults.
 	const example = shared.files.find((file) => file.path === '.devcontainer/.env.example')?.content ?? ''
 	assert.match(example, /^#DC_PROJECT=demo-app$/m)

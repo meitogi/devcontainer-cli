@@ -1,0 +1,43 @@
+# UniClaudeProxy sidecar — translates Anthropic Messages ⇄ Ollama-native and
+# converts <think> blocks to Anthropic-spec `thinking` content blocks (which
+# Claude Code knows how to render — fixes the hang on raw Ollama reasoning
+# output). mitmproxy audits the inbound leg : Claude Code → claude-bridge:9223.
+# The outbound leg (claude-bridge → Ollama on host loopback) is NOT routed
+# through mitm — same trade-off accepted as for `ollama.local` bypass.
+#
+# === POLICY PARITY ===
+# The /v1/messages block below is a STRICT 1:1 mirror of the same block in
+# policy.d/api.anthropic.com.yaml. Same methods (POST), same max_body_kb
+# (32768), same allowed_header_patterns. Claude Code emits the same
+# X-Stainless/X-Claude/... headers regardless of destination ; the policy
+# enforced here matches what Anthropic allows — no weaker, no broader.
+# If you change /v1/messages constraints here, mirror to api.anthropic.com.yaml
+# and policy.d/ollama.internal.yaml. See /opt/devcontainer/base/knowledge/INDEX.md
+# "Policy parity across Claude Code targets" for the cross-target rule.
+#
+# Only enforces the AUDITED path. The `claude-bridge.local:9223` bypass alias
+# goes direct TCP (NO_PROXY .local match) — no policy applied, mirror of the
+# existing `ollama.local` bypass. Daily switch + setup :
+# /opt/devcontainer/base/knowledge/ollama-local.md, "Mode local-proxy (sidecar)".
+
+endpoints:
+  - path: "^/v1/messages$"
+    methods: [POST]
+    max_body_kb: 32768              # 32 MB — parity with Anthropic cloud
+                                    # /v1/messages ceiling. NEVER weaken.
+
+# Claude Code sends the same Anthropic vendor headers (X-Api-Key,
+# X-Anthropic-*, X-Stainless-*, X-Claude-Code-Session-Id, …) regardless of
+# the destination — they're built by the Anthropic SDK before knowing which
+# base URL it'll hit. The sidecar may or may not act on these headers, but
+# mitmproxy enforces `blocked_header_patterns` BEFORE the request reaches
+# the sidecar, and would 403 with `blocked_header:X-Stainless-Lang,…` unless
+# we mirror the api.anthropic.com allowlist here.
+# Streaming SSE responses are passed through by addons/stream_sse.py.
+allowed_header_patterns:
+  - "^X-(Api|Anthropic|Service|Claude|Stainless|App|Client|Organization)-?"
+
+defaults_override:
+  enforcement_mode: block             # Strict mode. The sidecar's API surface
+                                      # is fully known (/v1/messages only — no
+                                      # discovery needed), so block over warn.

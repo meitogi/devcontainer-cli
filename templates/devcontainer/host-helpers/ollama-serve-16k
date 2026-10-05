@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Start `ollama serve` on the host with optimal settings for Qwen3 14B Q4_K_M
+# (or any ~9 GB model) on a 16 GB Mac.
+#
+# What it tunes :
+#   FLASH_ATTENTION=1       enables KV cache quantization (mandatory for KV_CACHE_TYPE)
+#   KV_CACHE_TYPE=q8_0      ~50% RAM saved on KV cache vs fp16, negligible quality loss
+#   CONTEXT_LENGTH=16384    global default ctx for all models (no per-model Modelfile needed)
+#   KEEP_ALIVE=30m          keep loaded model in RAM 30 min after last call (avoid cold reloads)
+#   MAX_LOADED_MODELS=1     only one model in RAM at a time — if a different name is
+#                           requested, unload the previous (RAM safety net)
+#   NUM_PARALLEL=1          one inference slot at a time (each slot allocates its own
+#                           KV cache, ~1.3 GB at 16k q8 — keeping it at 1 avoids quiet OOM)
+#
+# RAM budget Qwen3 14B Q4_K_M + 16k q8 KV : ~9 GB model + ~1.3 GB KV + ~1 GB overhead ≈ 11 GB.
+#
+# Caveat : if the Ollama desktop app is already running, it has claimed port 11434
+# WITHOUT these env vars — this script will fail with "address already in use".
+# Quit the desktop app from the menu bar before running this, or `pkill -f "ollama serve"`.
+#
+# Usage :
+#   [host] bash .devcontainer/host-helpers/ollama-serve-16k
+
+set -euo pipefail
+
+if [ -f /.dockerenv ] || [ -n "${REMOTE_CONTAINERS:-}" ]; then
+  echo "ERROR: This script must run on the host, not inside the container." >&2
+  exit 2
+fi
+
+# Defaults below — override per-invocation by setting the env var before
+# calling the script, e.g. : `OLLAMA_CONTEXT_LENGTH=8192 bash ollama-serve-16k`.
+export OLLAMA_FLASH_ATTENTION="${OLLAMA_FLASH_ATTENTION:-1}"
+export OLLAMA_KV_CACHE_TYPE="${OLLAMA_KV_CACHE_TYPE:-q8_0}"
+export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-16384}"
+export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-30m}"
+export OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"
+export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-1}"
+
+echo "Starting ollama serve with :"
+echo "  OLLAMA_FLASH_ATTENTION    = $OLLAMA_FLASH_ATTENTION"
+echo "  OLLAMA_KV_CACHE_TYPE      = $OLLAMA_KV_CACHE_TYPE"
+echo "  OLLAMA_CONTEXT_LENGTH     = $OLLAMA_CONTEXT_LENGTH"
+echo "  OLLAMA_KEEP_ALIVE         = $OLLAMA_KEEP_ALIVE"
+echo "  OLLAMA_MAX_LOADED_MODELS  = $OLLAMA_MAX_LOADED_MODELS"
+echo "  OLLAMA_NUM_PARALLEL       = $OLLAMA_NUM_PARALLEL"
+echo
+
+exec ollama serve
