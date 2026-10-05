@@ -64,12 +64,16 @@ test('every template and vendored-daemon file is in the npm pack listing', () =>
 	// notify/ rides the same guard for two entries npm can swallow just as
 	// quietly: the nested package.json — 23 bytes that make `require()` work at
 	// all, the package itself being "type": "module" — and vendor/senders/
-	// claude-code.icns, the one binary in the tree.
+	// claude-code.icns, the one binary in the tree. Only the daemon's runtime
+	// ships: tests/ (1.5 MB of fixtures), tools/ and the architecture diagram
+	// live in the repo and are deliberately outside `files`.
 	const packed = spawnSync('npm', ['pack', '--dry-run', '--json', '--silent'], { cwd: PACKAGE_ROOT, encoding: 'utf8' })
 	assert.equal(packed.status, 0, packed.stderr)
 	const listing = JSON.parse(packed.stdout) as { files: { path: string }[] }[]
 	const shipped = new Set((listing[0]?.files ?? []).map((file) => file.path))
-	for (const file of [...walk(TEMPLATES_DIR), ...walk(VENDORED_NOTIFY_DIR)]) {
+	const shippedNotify = ['index.js', 'package.json', 'README.md', 'lib', 'vendor'].map((name) => join(VENDORED_NOTIFY_DIR, name))
+	const notifyFiles = shippedNotify.flatMap((path) => (statSync(path).isDirectory() ? walk(path) : [path]))
+	for (const file of [...walk(TEMPLATES_DIR), ...notifyFiles]) {
 		const relative = relativePath(PACKAGE_ROOT, file)
 		assert.ok(shipped.has(relative), `${relative} is on disk but not in the tarball`)
 	}

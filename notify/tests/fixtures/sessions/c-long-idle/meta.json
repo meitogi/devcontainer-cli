@@ -1,0 +1,21 @@
+{
+  "slug": "c-long-idle",
+  "source_sid": "8d60cf89-4ffd-4454-8faf-e0aa6fe7b2f4",
+  "first_ts": "2026-07-11T21:18:25.900Z",
+  "last_ts": "2026-07-12T05:46:05.733Z",
+  "duration_ms": 30459833,
+  "duration_human": "508min",
+  "counts": {
+    "queue_events": 361,
+    "inbound_events": 250,
+    "pending_perms_events": 30
+  },
+  "queue_events_by_type": {
+    "user_replied": 16,
+    "tool_started": 159,
+    "tool_finished": 157,
+    "permission_request": 15,
+    "stop": 14
+  },
+  "notes": "Captured from a real Claude Code session. Every occurrence of source_sid is replaced with the placeholder zero-UUID via string-level replacement (safer than JSON top-level rewrite, catches nested payload.request.sessionId etc). replay-session.js reverses the substitution with a fresh UUID at replay time."
+}

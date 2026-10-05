@@ -1,0 +1,21 @@
+{
+  "slug": "b-balanced",
+  "source_sid": "a88dc189-7b29-4d74-b4e6-548cabac464f",
+  "first_ts": "2026-07-12T05:57:18.440Z",
+  "last_ts": "2026-07-12T08:02:01.269Z",
+  "duration_ms": 7482829,
+  "duration_human": "125min",
+  "counts": {
+    "queue_events": 236,
+    "inbound_events": 160,
+    "pending_perms_events": 20
+  },
+  "queue_events_by_type": {
+    "user_replied": 12,
+    "tool_started": 102,
+    "tool_finished": 100,
+    "permission_request": 10,
+    "stop": 12
+  },
+  "notes": "Captured from a real Claude Code session. Every occurrence of source_sid is replaced with the placeholder zero-UUID via string-level replacement (safer than JSON top-level rewrite, catches nested payload.request.sessionId etc). replay-session.js reverses the substitution with a fresh UUID at replay time."
+}

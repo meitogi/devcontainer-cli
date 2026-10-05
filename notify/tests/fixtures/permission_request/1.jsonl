@@ -1,0 +1,1 @@
+{"ts":"1970-01-01T00:00:00.000Z","sid":"00000000-0000-0000-0000-000000000000","event":"permission_request","session_name":"db-migration","tool_use_id":"toolu_01ABCdefGhiJkl","tool_name":"Bash","tool_input":{"command":"php vendor/bin/phinx migrate","description":"Run pending Phinx migrations"}}

@@ -1,0 +1,22 @@
+{
+  "slug": "a-permission-rich",
+  "source_sid": "457c3fec-a026-448c-8668-880e436ac10d",
+  "first_ts": "2026-07-11T15:28:24.737Z",
+  "last_ts": "2026-07-11T17:17:18.777Z",
+  "duration_ms": 6534040,
+  "duration_human": "109min",
+  "counts": {
+    "queue_events": 317,
+    "inbound_events": 170,
+    "pending_perms_events": 20
+  },
+  "queue_events_by_type": {
+    "user_replied": 28,
+    "tool_started": 120,
+    "tool_finished": 112,
+    "permission_request": 32,
+    "stop": 24,
+    "tool_cancelled": 1
+  },
+  "notes": "Captured from a real Claude Code session. Every occurrence of source_sid is replaced with the placeholder zero-UUID via string-level replacement (safer than JSON top-level rewrite, catches nested payload.request.sessionId etc). replay-session.js reverses the substitution with a fresh UUID at replay time."
+}

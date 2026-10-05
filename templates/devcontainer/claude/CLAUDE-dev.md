@@ -57,6 +57,12 @@ Before implementing:
 This is the cheapest moment to catch a misunderstanding. Five minutes
 of clarification beats two hours of rework.
 
+If it slips through anyway : **two failed corrections on the same point →
+stop patching.** Propose /clear (or /rewind) plus a better prompt
+incorporating what was learned, instead of a third in-place fix —
+accumulated corrections keep the failed attempts in context and degrade
+everything after them.
+
 **On a bug, suspect your own recently-touched code FIRST.** Never
 edit a third-party or shared library on a hypothesis before you have
 audited your own diff and cleared it. The shared library has many
@@ -191,10 +197,16 @@ Use subagents liberally to keep the main context window clean.
 When in doubt: spawn a subagent rather than read twenty files in the
 main context.
 
+**Verify a subagent's factual claims against the filesystem before
+acting on them.** A report is a lead, not evidence.
+
 ## 8. Self-Improvement Loop
 
 After any correction from the user, capture the rule so the mistake
-doesn't repeat. Three storage layers, picked by scope:
+doesn't repeat. **Trigger, not judgement call** : the user re-typing an
+instruction already given once — same session or not, even reworded —
+IS the signal. Capture it before the session ends. Three storage
+layers, picked by scope:
 
 - **`.devcontainer/LESSONS.md`** (root symlink for visibility,
   **committed**) — project-wide patterns useful to anyone on this
