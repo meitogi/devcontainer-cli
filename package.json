@@ -1,10 +1,10 @@
 {
   "name": "@meitogi/devcontainer-cli",
-  "version": "0.7.0",
-  "description": "Host-side control plane for the meitogi devcontainer sandbox \u2014 init wizard, initialize, update, doctor.",
+  "version": "0.8.0",
+  "description": "Host-side control plane for the meitogi devcontainer sandbox — init wizard, initialize, update, doctor.",
   "type": "module",
   "license": "MIT",
-  "author": "K\u00e9vin \u0298\u203f\u0298 <cmoi@kevledev.fr>",
+  "author": "Kévin ʘ‿ʘ <cmoi@kevledev.fr>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/meitogi/devcontainer-cli.git"
