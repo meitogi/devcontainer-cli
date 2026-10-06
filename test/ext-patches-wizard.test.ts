@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Writable } from 'node:stream'
+import { DEFAULT_BASE_VERSION } from '../src/lib/docker.js'
 import { init, type InitOptions } from '../src/commands/init.js'
 import { readEnvFile } from '../src/lib/env-file.js'
 import { extPatchesConfigPath, readExtPatchesConfig, writeExtPatchesConfig } from '../src/lib/machine-config.js'
@@ -75,6 +76,8 @@ async function runInit(dir: string, overrides: Partial<InitOptions> = {}) {
 		err,
 		probe: LINUX_PROBE,
 		discover: () => [],
+		// The registry is never reached from a test: the template's pin, as offline.
+		resolveBase: async () => ({ version: DEFAULT_BASE_VERSION, source: 'default', reason: 'test' }),
 		installer: async () => 0,
 		...overrides,
 	})

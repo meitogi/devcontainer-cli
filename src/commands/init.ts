@@ -16,6 +16,7 @@ import { existsSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { detectStack, isStackId, STACKS, stackInfo, type StackId } from '../lib/detect-stack.js'
 import { readDevcontainerJson } from '../lib/devcontainer-json.js'
+import { type BaseResolution, latestPublishedBase } from '../lib/registry.js'
 import {
 	BASE_IMAGE_REPOSITORY,
 	DEFAULT_BASE_VERSION,
@@ -53,6 +54,10 @@ export interface InitOptions {
 	credsVolume?: string | undefined
 	stack?: string | undefined
 	claudeCodeVersion?: string | undefined
+	/** `--base x.y.z`: pin this base version instead of resolving the newest published one. */
+	baseVersion?: string | undefined
+	/** Base-version resolver; tests inject one so the wizard never reaches ghcr.io. */
+	resolveBase?: ((claudeCodeVersion: string) => Promise<BaseResolution>) | undefined
 	/** Non-interactive ext-patches opt-in; token comes from EXT_PATCHES_TOKEN, never a flag. */
 	extPatchesRepo?: string | undefined
 	extPatchesRef?: string | undefined
@@ -98,6 +103,7 @@ Options:
                              private per-project one
   --stack <id>               ${STACKS.map((stack) => stack.id).join(' | ')}
   --cc <x.y.z>               Claude Code line to pin (published: ${PUBLISHED_CLAUDE_CODE_VERSIONS.join(', ')})
+  --base <x.y.z>             Base image version to pin (default: the newest published on that line, read from ghcr.io; offline: ${DEFAULT_BASE_VERSION})
   --ext-patches-repo <owner/name>  Extension patchers repo (non-interactive opt-in)
   --ext-patches-ref <ref>    Ref for the above (default: empty = auto)
   --no-install               Write package.json but do not run the package manager
@@ -220,6 +226,9 @@ function validateFlags(options: InitOptions): string | null {
 	if (options.claudeCodeVersion !== undefined && !SEMVER.test(options.claudeCodeVersion)) {
 		return `--cc "${options.claudeCodeVersion}" is not a version (expected x.y.z)`
 	}
+	if (options.baseVersion !== undefined && !SEMVER.test(options.baseVersion)) {
+		return `--base "${options.baseVersion}" is not a version (expected x.y.z)`
+	}
 	return null
 }
 
@@ -341,7 +350,16 @@ async function collectAnswers(wizard: WizardContext): Promise<CollectedAnswers |
 		)
 	}
 
-	const answers: ScaffoldAnswers = { projectId, displayName, stack, credsVolume, claudeCodeVersion }
+	// --- 5b. Base image version ---------------------------------------------
+	// The newest image published on that line, so a patch of the image never
+	// waits for a CLI release to reach new projects; --base pins by hand; the
+	// template's default is only what an offline machine gets.
+	const base: BaseResolution =
+		options.baseVersion !== undefined
+			? { version: options.baseVersion, source: 'flag' }
+			: await (options.resolveBase ?? latestPublishedBase)(claudeCodeVersion)
+
+	const answers: ScaffoldAnswers = { projectId, displayName, stack, credsVolume, claudeCodeVersion, baseVersion: base.version }
 
 	// --- 6. Extension patchers (machine-level reuse) ---------------------------
 	const extPatches = await collectExtPatches(wizard, claudeCodeVersion)
@@ -354,11 +372,17 @@ async function collectAnswers(wizard: WizardContext): Promise<CollectedAnswers |
 	say(`    Project id    : ${projectId}`)
 	say(`    Display name  : ${displayName}`)
 	say(`    Creds volume  : ${credsVolume ?? `(private — claude-creds-${projectId}, created at first start)`}`)
-	say(`    Base image    : ${buildPlan(answers).imageRef}`)
+	say(`    Base image    : ${buildPlan(answers).imageRef}  ${describeBase(base)}`)
 	if (extPatches !== null) say(`    Ext-patches   : ${extPatches.repo} @ ${extPatches.ref === '' ? 'auto' : extPatches.ref}`)
 	say()
 	if (interactive && !(await confirm(context, { question: 'Proceed?', defaultYes: true }))) return null
 	return { answers, extPatches }
+}
+
+function describeBase(base: BaseResolution): string {
+	if (base.source === 'ghcr') return '(newest published on ghcr.io)'
+	if (base.source === 'flag') return '(--base)'
+	return `(template default — ${base.reason ?? 'not resolved'})`
 }
 
 const REPO_PATTERN = /^[\w.-]+\/[\w.-]+$/

@@ -97,11 +97,16 @@ inherited from `ghcr.io/meitogi/devcontainer-sandbox` at runtime.
 
 ```
 devc init [dir] [--yes] [--project-id <slug>] [--display-name <name>]
-          [--creds-volume <name|none>] [--stack <id>] [--cc <x.y.z>]
+          [--creds-volume <name|none>] [--stack <id>] [--cc <x.y.z>] [--base <x.y.z>]
           [--no-install] [--dry-run]
 ```
 
 `--yes` takes every default and is required when stdin is not a terminal.
+
+The base image pinned is the newest published on the chosen Claude Code line,
+read from ghcr.io at scaffold time and written as an explicit `BASE_IMAGE` in
+`.env`; offline, the template's own pin is used and the summary says so.
+`--base` pins a version by hand.
 
 An existing `.devcontainer/` is never overwritten. A tree this CLI scaffolded
 gets a per-file report and only its missing files added; a tree made by

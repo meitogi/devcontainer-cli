@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Writable } from 'node:stream'
+import { DEFAULT_BASE_VERSION } from '../src/lib/docker.js'
 import { init, type InitOptions } from '../src/commands/init.js'
 import { readDevcontainerJson, readStitchuCustomizations } from '../src/lib/devcontainer-json.js'
 import { readEnvFile } from '../src/lib/env-file.js'
@@ -67,6 +68,8 @@ async function runInit(dir: string, overrides: Partial<InitOptions> = {}): Promi
 		err,
 		probe: LINUX_PROBE,
 		discover: () => [],
+		// The registry is never reached from a test: the template's pin, as offline.
+		resolveBase: async () => ({ version: DEFAULT_BASE_VERSION, source: 'default', reason: 'test' }),
 		installer: async (_projectDir, argv) => {
 			installs.push([...argv])
 			return 0
@@ -282,12 +285,55 @@ test('flags override the defaults and reach the files', async () => {
 		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
 		assert.equal(env['DC_PROJECT'], 'custom-id')
 		assert.equal(env['CLAUDE_CREDS_VOLUME'], undefined)
-		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:1.9.0-cc2.1.220')
+		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:1.9.1-cc2.1.220')
 		assert.equal(readDevcontainerJson(join(dir, '.devcontainer', 'devcontainer.json'))?.['name'], 'Custom Name — Claude Code Sandbox')
 		assert.match(readFileSync(join(dir, '.devcontainer', 'claude', 'CLAUDE-project.md'), 'utf8'), /Default stack\*\* : PHP/)
 		assert.match(run.out, /stacks\/php\.md/)
 	} finally {
 		cleanup()
+	}
+})
+
+test('the newest published base wins over the template pin, as a live BASE_IMAGE line', async () => {
+	const dir = mkdtempSync(join(tmpdir(), 'devc-init-'))
+	try {
+		const run = await runInit(dir, { resolveBase: async () => ({ version: '9.9.9', source: 'ghcr' }) })
+		assert.equal(run.code, 0)
+		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
+		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:9.9.9-cc2.1.280')
+		assert.match(run.out, /Base image    : ghcr\.io\/meitogi\/devcontainer-sandbox:9\.9\.9-cc2\.1\.280  \(newest published on ghcr\.io\)/)
+	} finally {
+		rmSync(dir, { recursive: true, force: true })
+	}
+})
+
+test('offline, the template pin stays commented and the summary says why', async () => {
+	const dir = mkdtempSync(join(tmpdir(), 'devc-init-'))
+	try {
+		const run = await runInit(dir, {
+			resolveBase: async () => ({ version: DEFAULT_BASE_VERSION, source: 'default', reason: 'ghcr.io did not answer in time' }),
+		})
+		assert.equal(run.code, 0)
+		const envText = readFileSync(join(dir, '.devcontainer', '.env'), 'utf8')
+		assert.match(envText, /^#BASE_IMAGE=/m)
+		assert.doesNotMatch(envText, /^BASE_IMAGE=/m)
+		assert.match(run.out, /\(template default — ghcr\.io did not answer in time\)/)
+	} finally {
+		rmSync(dir, { recursive: true, force: true })
+	}
+})
+
+test('--base pins by hand and is validated like --cc', async () => {
+	const dir = mkdtempSync(join(tmpdir(), 'devc-init-'))
+	try {
+		assert.equal((await runInit(dir, { baseVersion: 'latest' })).code, 2)
+		const run = await runInit(dir, { baseVersion: '1.7.2', resolveBase: async () => ({ version: '9.9.9', source: 'ghcr' }) })
+		assert.equal(run.code, 0)
+		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
+		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:1.7.2-cc2.1.280')
+		assert.match(run.out, /\(--base\)/)
+	} finally {
+		rmSync(dir, { recursive: true, force: true })
 	}
 })
 

@@ -31,7 +31,7 @@ import {
 import { dirname, join } from 'node:path'
 import { stackInfo, type StackId } from './detect-stack.js'
 import { readDevcontainerJson } from './devcontainer-json.js'
-import { BASE_IMAGE_REPOSITORY, baseImageRef, DEFAULT_CLAUDE_CODE_VERSION } from './docker.js'
+import { BASE_IMAGE_REPOSITORY, baseImageRef, DEFAULT_BASE_VERSION, DEFAULT_CLAUDE_CODE_VERSION } from './docker.js'
 import { applyUncomment } from './env-file.js'
 import { detectLegacy } from './legacy.js'
 import { render, type TemplateValues } from './template.js'
@@ -142,6 +142,8 @@ export interface ScaffoldAnswers {
 	/** null = per-project volume, derived and created by `devc initialize`. */
 	credsVolume: string | null
 	claudeCodeVersion: string
+	/** Base image version to pin; omitted = the template's DEFAULT_BASE_VERSION. */
+	baseVersion?: string | undefined
 }
 
 export interface PlannedFile {
@@ -210,8 +212,11 @@ export function buildPlan(answers: ScaffoldAnswers, templatesDir = TEMPLATES_DIR
 	if (example === undefined) throw new Error(`${root}: no .env.example template`)
 	let env = applyUncomment(example.content, 'DC_PROJECT', answers.projectId)
 	if (answers.credsVolume !== null) env = applyUncomment(env, 'CLAUDE_CREDS_VOLUME', answers.credsVolume)
-	if (answers.claudeCodeVersion !== DEFAULT_CLAUDE_CODE_VERSION) {
-		env = applyUncomment(env, 'BASE_IMAGE', baseImageRef(answers.claudeCodeVersion))
+	// The template's docker-compose.yml defaults to DEFAULT_BASE_VERSION-cc<default>;
+	// any other pair gets the explicit, live BASE_IMAGE line.
+	const baseVersion = answers.baseVersion ?? DEFAULT_BASE_VERSION
+	if (answers.claudeCodeVersion !== DEFAULT_CLAUDE_CODE_VERSION || baseVersion !== DEFAULT_BASE_VERSION) {
+		env = applyUncomment(env, 'BASE_IMAGE', baseImageRef(answers.claudeCodeVersion, baseVersion))
 	}
 	files.push({ path: '.devcontainer/.env', content: env, ownership: 'user', executable: false })
 
@@ -233,7 +238,7 @@ export function buildPlan(answers: ScaffoldAnswers, templatesDir = TEMPLATES_DIR
 			{ path: '.claude/rules/project.md', target: '../../.devcontainer/claude/CLAUDE-project.md' },
 		],
 		gitignoreFragment: readFileSync(join(templatesDir, 'root', 'gitignore-root'), 'utf8'),
-		imageRef: baseImageRef(answers.claudeCodeVersion),
+		imageRef: baseImageRef(answers.claudeCodeVersion, baseVersion),
 	}
 }
 

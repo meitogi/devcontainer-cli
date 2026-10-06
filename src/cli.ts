@@ -104,6 +104,7 @@ type InitValueKey =
 	| 'credsVolume'
 	| 'stack'
 	| 'claudeCodeVersion'
+	| 'baseVersion'
 	| 'extPatchesRepo'
 	| 'extPatchesRef'
 
@@ -113,6 +114,7 @@ const INIT_VALUE_FLAGS: Readonly<Record<string, InitValueKey>> = {
 	'--creds-volume': 'credsVolume',
 	'--stack': 'stack',
 	'--cc': 'claudeCodeVersion',
+	'--base': 'baseVersion',
 	'--ext-patches-repo': 'extPatchesRepo',
 	'--ext-patches-ref': 'extPatchesRef',
 }
