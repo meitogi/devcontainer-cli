@@ -125,6 +125,28 @@ export function writeHostOs(devcontainerDir: string, kind: HostKind): string {
 	return target
 }
 
+/**
+ * Publish the boot id for the container side to adopt (D4).
+ *
+ * @remarks
+ * The container cannot be told this through the environment: `containerEnv` is
+ * resolved when VS Code parses `devcontainer.json`, and `.env` via `env_file` is
+ * only re-read at container *create* — so neither reaches a reopen, which is
+ * exactly the mode that cost the morning of 2026-10-06. The workspace is
+ * bind-mounted, so a file is the one channel that works both ways. Same pattern
+ * and same single-line shape as `writeHostOs` above, for the same reason.
+ *
+ * `devc-hook` validates the content rather than trusting it, and adopts it only
+ * when the phase has not already filed a log under it: this file outlives the
+ * boot that wrote it, and nothing cleans it.
+ */
+export function writeBootId(devcontainerDir: string, bootId: string): string {
+	const target = join(devcontainerDir, 'tmp', 'logs', '.boot-id')
+	mkdirSync(dirname(target), { recursive: true })
+	writeFileSync(target, `${bootId}\n`, 'utf8')
+	return target
+}
+
 /** True when `path` already exists — small helper so callers avoid importing fs. */
 export function exists(path: string): boolean {
 	return existsSync(path)

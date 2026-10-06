@@ -43,6 +43,7 @@ import {
 	isBareWin32,
 	isSupported,
 	readHostProbe,
+	writeBootId,
 	writeHostOs,
 	type HostKind,
 	type HostProbe,
@@ -139,12 +140,16 @@ export async function initialize(options: InitializeOptions): Promise<number> {
 	}
 
 	// === Lifecycle logging (initialize.sh:57-111) ============================
-	const timestamp = stamp(new Date())
-	const logsDir = join(paths.devcontainerDir, 'tmp', 'logs')
-	if (!options.dryRun) mkdirSync(logsDir, { recursive: true })
+	// This stamp is the boot id: it names the folder every phase of this boot
+	// files into, and it is what `.boot-id` hands the container side (D3, D4).
+	// Running first, before any container work, is what makes that ordering safe
+	// — measured, see the rollout's LOG.md § 2.
+	const bootId = stamp(new Date())
+	const bootDir = join(paths.devcontainerDir, 'tmp', 'logs', bootId)
+	if (!options.dryRun) mkdirSync(bootDir, { recursive: true })
 	const logger = Logger.create({
-		logFile: join(logsDir, `initialize-${timestamp}.log`),
-		traceFile: join(logsDir, `initialize-${timestamp}.trace`),
+		logFile: join(bootDir, `initialize-${bootId}.log`),
+		traceFile: join(bootDir, `initialize-${bootId}.trace`),
 		debug: process.env['DEBUG'] === '1',
 		silentSink: options.dryRun,
 		...(options.out === undefined ? {} : { out: options.out }),
@@ -152,7 +157,7 @@ export async function initialize(options: InitializeOptions): Promise<number> {
 	})
 
 	try {
-		return await runInitialize({ options, paths, hostKind, logger, timestamp })
+		return await runInitialize({ options, paths, hostKind, logger, bootId })
 	} finally {
 		logger.close()
 	}
@@ -163,11 +168,11 @@ interface Context {
 	paths: ProjectPaths
 	hostKind: HostKind
 	logger: Logger
-	timestamp: string
+	bootId: string
 }
 
 async function runInitialize(context: Context): Promise<number> {
-	const { options, paths, hostKind, logger, timestamp } = context
+	const { options, paths, hostKind, logger, bootId } = context
 	const { devcontainerDir, projectDir, envFile } = paths
 	const dryRun = options.dryRun
 
@@ -182,6 +187,14 @@ async function runInitialize(context: Context): Promise<number> {
 	// the host, so it is the only place that can answer. See platform.ts.
 	if (!dryRun) writeHostOs(devcontainerDir, hostKind)
 	logger.trace({ kind: 'fs', op: 'write', path: join(devcontainerDir, 'tmp', 'logs', 'host-os') })
+
+	// And the boot id is only publishable here, for the same reason and one more:
+	// this runs before any container work, so the file is in place before the
+	// first phase can look for it. Same `if (!dryRun)` guard as above, and it is
+	// load-bearing — the panel promises "(none - dry-run writes nothing)", and a
+	// .boot-id left behind by a dry run would be adopted by the next real boot.
+	if (!dryRun) writeBootId(devcontainerDir, bootId)
+	logger.trace({ kind: 'fs', op: 'write', path: join(devcontainerDir, 'tmp', 'logs', '.boot-id') })
 
 	// === .env (initialize.sh:113-123) ========================================
 	// `set -a; source .env` assigns unconditionally, so a value in the file wins
@@ -252,7 +265,7 @@ async function runInitialize(context: Context): Promise<number> {
 
 	// === Optional rebuild diagnostic (initialize.sh:602-611) =================
 	if (env['DEBUG_REBUILD_CONTEXT'] === '1' && !dryRun) {
-		dumpRebuildContext({ logger, devcontainerDir, timestamp })
+		dumpRebuildContext({ logger, devcontainerDir, bootId })
 	}
 
 
@@ -958,11 +971,24 @@ function isEmptyOrMissing(path: string): boolean {
 	}
 }
 
-/** `date +%Y%m%d-%H%M%S`, in local time like the bash original. */
+/**
+ * `date -u +%Y%m%dT%H%M%SZ` — the boot id, struck in UTC on purpose (D3).
+ *
+ * Local time is what this did before, matching the bash original, and it is why
+ * one boot on 2026-10-06 wrote `initialize-20261006-093203.log` next to
+ * `post-start-20261006-073743.log`: the container reads UTC not by convention but
+ * because the published image ships `ENV TZ=""` (`publish.yml` passes no `TZ`) and
+ * glibc falls back to UTC. Striking UTC on both sides makes the clock true instead
+ * of incidental, and the `Z` says so in the name.
+ *
+ * Fixed width and zero-padded, so lexicographic order stays chronological order —
+ * the property `shell-init.sh` and `boot-summary` refuse `ls -t` for. Not
+ * `toISOString()`, which would bring `-`, `:` and milliseconds along.
+ */
 export function stamp(date: Date): string {
 	const pad = (n: number): string => String(n).padStart(2, '0')
 	return (
-		`${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}` +
-		`-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
+		`${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}` +
+		`T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`
 	)
 }

@@ -29,7 +29,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Writable } from 'node:stream'
-import { initialize } from '../src/commands/initialize.js'
+import { initialize, stamp } from '../src/commands/initialize.js'
 import { DEFAULT_CLAUDE_CODE_VERSION } from '../src/lib/docker.js'
 import type { HostProbe } from '../src/lib/platform.js'
 
@@ -151,6 +151,72 @@ function captured(): { out: NodeJS.WritableStream; err: NodeJS.WritableStream; t
 }
 
 const read = (path: string): string | null => (existsSync(path) ? readFileSync(path, 'utf8') : null)
+
+/** The boot id's shape, asserted rather than described. */
+const BOOT_ID_RE = /^\d{8}T\d{6}Z$/
+
+// D3. Pinned against a FIXED instant, not `new Date()`: a test that stamps "now"
+// and reparses it passes in any time zone, including the local-time behaviour
+// this replaces. The literal below is the very boot from EXISTING.md § 3 whose
+// two halves were logged two hours apart — 07:37:43 UTC was what the container
+// wrote while the host wrote 09:32:03. Only a UTC stamp can answer 073743 here,
+// and this suite runs in a container whose TZ is empty.
+test('stamp is UTC and fixed-width, so the boot id cannot drift with the host clock', () => {
+	assert.equal(stamp(new Date('2026-10-06T07:37:43.000Z')), '20261006T073743Z')
+	assert.match(stamp(new Date('2026-10-06T07:37:43.000Z')), BOOT_ID_RE)
+
+	// Zero-padded in every field, which is what makes lexicographic order
+	// chronological order — the property shell-init.sh:28-30 refuses `ls -t` for.
+	assert.equal(stamp(new Date('2026-01-02T03:04:05.000Z')), '20260102T030405Z')
+	assert.ok(
+		stamp(new Date('2026-01-02T03:04:05.000Z')) < stamp(new Date('2026-01-02T03:04:06.000Z')),
+		'one second later must sort later as a string',
+	)
+
+	// An instant that is a different DAY in a western zone and in UTC. If these
+	// accessors ever go back to local time, this is the assertion that fails
+	// wherever the suite runs, instead of only east of Greenwich.
+	assert.equal(stamp(new Date('2026-10-06T00:30:00.000Z')), '20261006T003000Z')
+})
+
+test('a real run files its log under the boot id, and .boot-id hands that id over', async () => {
+	const { projectDir, devcontainerDir, cleanup } = fixture()
+	try {
+		const code = await withoutAmbientPin(() => withStubDocker(() =>
+			initialize({
+				devcontainerDir,
+				dryRun: false,
+				cwd: projectDir,
+				input: PIPED_STDIN(),
+				probe: LINUX_PROBE,
+				...captured(),
+			}),
+		))
+		assert.equal(code, 0)
+
+		const logs = join(devcontainerDir, 'tmp', 'logs')
+		const entries = readdirSync(logs)
+		const bootDirs = entries.filter((name) => BOOT_ID_RE.test(name))
+		assert.equal(bootDirs.length, 1, `exactly one boot folder, got ${JSON.stringify(entries)}`)
+		const bootId = bootDirs[0] as string
+
+		// The file is the channel the container reads (D4), so its exact bytes
+		// matter: one line, the id, a trailing newline — the shape writeHostOs
+		// established and devc-hook's `tr -d '[:space:]'` expects.
+		assert.equal(read(join(logs, '.boot-id')), `${bootId}\n`)
+
+		// The leaf carries the same stamp as its folder: on the host side the boot
+		// id IS initialize's own stamp. This is the host half of the two-hour gap
+		// being closed — the container half is asserted in overlay.test.sh.
+		assert.deepEqual(readdirSync(join(logs, bootId)).sort(), [`initialize-${bootId}.log`])
+
+		// host-os does NOT move: cdp.mjs:103 resolves it flat, and so does
+		// test/differential/run.mjs:182.
+		assert.equal(read(join(logs, 'host-os')), 'linux\n')
+	} finally {
+		cleanup()
+	}
+})
 
 test('non-interactive: writes the defaults and syncs the proxy variables', async () => {
 	const { projectDir, devcontainerDir, cleanup } = fixture()
@@ -393,6 +459,10 @@ test('dry-run writes nothing at all', async () => {
 			join(devcontainerDir, '.env'),
 			join(devcontainerDir, 'tmp', 'configured', 'claude-mode'),
 			join(devcontainerDir, 'tmp', 'logs'),
+			// Named on its own line rather than left to the tmp/logs/ assertion
+			// above: a .boot-id written by a dry run would be adopted by the next
+			// real boot and silently merge two boots into one folder.
+			join(devcontainerDir, 'tmp', 'logs', '.boot-id'),
 			join(projectDir, '.vscode'),
 		]) {
 			assert.equal(existsSync(path), false, `${path} must not exist after a dry run`)
@@ -642,8 +712,12 @@ test('the screen is one vocabulary, names both versions, and keeps recipes in th
 		assert.doesNotMatch(screen, /firewall-mode\.sh/)
 		assert.doesNotMatch(screen, /devc firewall-mode basic/, 'recipes are log-only')
 
+		// One level down now: the log lives in this boot's folder, not flat under
+		// tmp/logs/ (D4). tmp/logs/ itself holds only .boot-id, host-os and the
+		// boot directories.
 		const logs = join(devcontainerDir, 'tmp', 'logs')
-		const logFile = join(logs, readdirSync(logs).find((name) => name.endsWith('.log')) ?? '')
+		const bootDir = join(logs, readdirSync(logs).find((name) => /^\d{8}T\d{6}Z$/.test(name)) ?? '')
+		const logFile = join(bootDir, readdirSync(bootDir).find((name) => name.endsWith('.log')) ?? '')
 		const logged = readFileSync(logFile, 'utf8')
 		assert.match(logged, /devc firewall-mode basic/)
 		assert.match(logged, /rm \.devcontainer\/tmp\/configured\/claude-mode/)

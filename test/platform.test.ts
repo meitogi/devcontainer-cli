@@ -4,7 +4,17 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { detectHostKind, isBareWin32, isSupported, type HostProbe } from '../src/lib/platform.js'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import {
+	detectHostKind,
+	isBareWin32,
+	isSupported,
+	writeBootId,
+	writeHostOs,
+	type HostProbe,
+} from '../src/lib/platform.js'
 
 function probe(overrides: Partial<HostProbe>): HostProbe {
 	return { platform: 'linux', env: {}, procVersion: null, ...overrides }
@@ -61,4 +71,44 @@ test('the four supported kinds are exactly mac, linux, wsl, gitbash', () => {
 		(['mac', 'linux', 'wsl', 'gitbash', 'cygwin', 'unknown'] as const).filter(isSupported),
 		['mac', 'linux', 'wsl', 'gitbash'],
 	)
+})
+
+// D4 — the boot id crosses host→container as a file, because neither containerEnv
+// nor env_file reaches a reopen. These are the two writers that share tmp/logs/
+// at its top level, and the one thing that must stay true of both is that each
+// leaves exactly one line the other side can read without parsing.
+test('writeBootId drops a single-line .boot-id, creating tmp/logs on the way', () => {
+	const devcontainerDir = mkdtempSync(join(tmpdir(), 'devc-bootid-'))
+	try {
+		const target = writeBootId(devcontainerDir, '20261006T073743Z')
+
+		assert.equal(target, join(devcontainerDir, 'tmp', 'logs', '.boot-id'))
+		// Trailing newline, nothing else: devc-hook strips whitespace and then
+		// matches the whole string against ^[0-9]{8}T[0-9]{6}Z$, so a second line
+		// or a key=value wrapper would be rejected as malformed and the boot would
+		// silently mint its own id instead of joining this one.
+		assert.equal(readFileSync(target, 'utf8'), '20261006T073743Z\n')
+		// The directory did not exist a moment ago — the helper owns its mkdir, so
+		// callers never have to order themselves against the logger's.
+		assert.ok(existsSync(join(devcontainerDir, 'tmp', 'logs')))
+	} finally {
+		rmSync(devcontainerDir, { recursive: true, force: true })
+	}
+})
+
+test('writeBootId and writeHostOs are siblings, both flat in tmp/logs', () => {
+	const devcontainerDir = mkdtempSync(join(tmpdir(), 'devc-bootid-'))
+	try {
+		const bootId = writeBootId(devcontainerDir, '20261006T073743Z')
+		const hostOs = writeHostOs(devcontainerDir, 'mac')
+
+		// host-os must NOT follow the phase logs into the boot folder: cdp.mjs:103
+		// resolves it at tmp/logs/host-os and nothing tells it otherwise. A rewrite
+		// of this layout that moves it breaks visual-loop for no gain.
+		assert.equal(hostOs, join(devcontainerDir, 'tmp', 'logs', 'host-os'))
+		assert.equal(join(bootId, '..'), join(hostOs, '..'))
+		assert.equal(readFileSync(hostOs, 'utf8'), 'mac\n')
+	} finally {
+		rmSync(devcontainerDir, { recursive: true, force: true })
+	}
 })

@@ -18,14 +18,17 @@ const SIGNAL_ENV_RE = /(VSCODE|REMOTE_|DEVCONTAINER|DOCKER|COMPOSE|BUILDKIT|NO_?
 export interface RebuildContextOptions {
 	logger: Logger
 	devcontainerDir: string
-	timestamp: string
+	bootId: string
 }
 
 export function dumpRebuildContext(options: RebuildContextOptions): void {
 	const { logger, devcontainerDir } = options
-	const logDir = join(devcontainerDir, 'tmp', 'logs')
+	// Into this boot's folder, not flat beside it: this dump diagnoses exactly
+	// the boot whose id names the directory, and splitting one boot's artefacts
+	// across two places is the thing the folder layout exists to stop (D4).
+	const logDir = join(devcontainerDir, 'tmp', 'logs', options.bootId)
 	mkdirSync(logDir, { recursive: true })
-	const logPath = join(logDir, `rebuild-context-${options.timestamp}.log`)
+	const logPath = join(logDir, `rebuild-context-${options.bootId}.log`)
 
 	const self = readProcess(process.pid)
 	const lines: string[] = [
