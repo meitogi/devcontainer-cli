@@ -2,8 +2,15 @@
 //
 // These cover the branch the differential harness cannot reach: the
 // interactive path. That harness runs both implementations with stdin not a
-// TTY, which is the right choice — it is what CI and a VS Code rebuild hit —
-// but it means the Claude-mode prompt never fires there.
+// TTY, which is what CI hits, but it means the Claude-mode prompt never fires
+// there.
+//
+// It is NOT what a VS Code boot hits, contrary to what this comment claimed
+// until 2026-10-06. Measured against Dev Containers 0.459.1 on macOS: VS Code
+// runs initializeCommand as `/bin/sh -c <command>` under
+// devContainersSpecCLI.js up, and the child sees stdin as a TTY (stdout not).
+// So a real Reopen or Rebuild takes the interactive path, which is what makes
+// asking a question from here work at all.
 //
 // The fixture is deliberately bare, and NOTIFY_DAEMON_DIR below keeps it that
 // way: the package now ships its own notify/index.js, so without the override
@@ -610,7 +617,12 @@ test('the screen is one vocabulary, names both versions, and keeps recipes in th
 		assert.match(screen, /^ {4}sandbox {6}1\.4\.1$/m, 'the sandbox version the tree pins')
 		assert.match(screen, /^ {4}claude code {2}2\.1\.272$/m, 'and the Claude Code version, named separately')
 		assert.doesNotMatch(screen, /devcontainer-sandbox:1\.4\.1-cc2\.1\.272/, 'the ref itself stays out unless it deviates')
-		assert.match(screen, /^ {4}mode {9}(first build|rebuild|reopen|unknown)/m, 'which of the three starts this is')
+		// The exact mode, not the four-way alternation this used to accept: an
+		// assertion that matches every possible value cannot catch a wrong one. The
+		// mute docker stub answers `ps` with nothing (no container matched, so a
+		// rebuild or a first build) and succeeds at `image inspect` (the base is
+		// already here), which is `rebuild` and only `rebuild`.
+		assert.match(screen, /^ {4}mode {9}rebuild$/m, 'which of the three starts this is')
 
 		// Markers, and nothing that a terminal might render as an emoji.
 		assert.match(screen, /^\[[+>!]\] /m, 'steps carry an ASCII marker')
@@ -637,6 +649,315 @@ test('the screen is one vocabulary, names both versions, and keeps recipes in th
 		assert.match(logged, /rm \.devcontainer\/tmp\/configured\/claude-mode/)
 		assert.match(logged, /^=== devc initialize /m, 'the stamped header is log-only')
 		assert.doesNotMatch(screen, /^=== devc initialize /m)
+	} finally {
+		cleanup()
+	}
+})
+
+/**
+ * A stub `docker` that answers per subcommand and records every argv.
+ *
+ * `withStubDocker` above cannot reach the drift path at all: its mute `exit 0`
+ * makes `docker ps` print nothing, so no container is ever found and there is
+ * nothing running whose base version could disagree with the pin. This one
+ * takes the technique from creds-volumes.test.ts — stub first on PATH, a `case`
+ * per subcommand, argv appended to a trace file — and parameterises the two
+ * answers the drift check turns on.
+ */
+interface DockerStub {
+	/** What `docker ps -a -q --filter …` prints. Absent = no container matched. */
+	containerId?: string
+	/**
+	 * What `docker inspect --format '{{index .Config.Labels …}}'` prints.
+	 *
+	 * Absent means the real thing's label-missing answer, which is an empty line
+	 * and exit 0 — a Go template indexing a missing key yields the zero value.
+	 */
+	label?: string
+	/** Non-zero from `docker inspect`, the way a silent daemon answers. */
+	inspectFails?: boolean
+}
+
+async function withDockerStub<T>(stub: DockerStub, fn: (trace: () => string) => Promise<T>): Promise<T> {
+	const binDir = mkdtempSync(join(tmpdir(), 'devc-bin-'))
+	const tracePath = join(binDir, 'trace')
+	// `printf '%s\\n'` and never an embedded newline in the value: bash's printf
+	// does not expand escapes in its arguments, so a "\\n" written into the
+	// string arrives as a literal backslash-n and the stub answers garbage.
+	const script = `#!/bin/bash
+printf '%s\\n' "$*" >> ${JSON.stringify(tracePath)}
+case "$1" in
+  ps) printf '%s\\n' ${JSON.stringify(stub.containerId ?? '')} ;;
+  inspect) printf '%s\\n' ${JSON.stringify(stub.label ?? '')}; exit ${stub.inspectFails === true ? 1 : 0} ;;
+esac
+exit 0
+`
+	writeFileSync(join(binDir, 'docker'), script, { encoding: 'utf8', mode: 0o755 })
+	const saved = process.env['PATH']
+	process.env['PATH'] = `${binDir}:${saved ?? ''}`
+	try {
+		return await fn(() => (existsSync(tracePath) ? readFileSync(tracePath, 'utf8') : ''))
+	} finally {
+		process.env['PATH'] = saved
+		rmSync(binDir, { recursive: true, force: true })
+	}
+}
+
+/** The pin the fixture's tree carries, read where compose reads it. */
+const PINNED = '1.8.0'
+function pinBaseImage(devcontainerDir: string, version = PINNED): void {
+	writeFileSync(
+		join(devcontainerDir, 'Dockerfile'),
+		`ARG BASE_IMAGE=ghcr.io/meitogi/devcontainer-sandbox:${version}-cc2.1.280\nFROM \${BASE_IMAGE}\n`,
+		'utf8',
+	)
+}
+
+test('drift, non-interactive: the pin and the running version are both named, and nothing blocks', async () => {
+	// The 2026-10-06 incident, as a test. The panel says what the tree pins; the
+	// container is two patch versions behind it; and on this path there is nobody
+	// to ask, so the run reports and hands over rather than stopping a boot that
+	// is going to happen anyway.
+	const { projectDir, devcontainerDir, cleanup } = fixture()
+	const capture = captured()
+	try {
+		pinBaseImage(devcontainerDir)
+		const code = await withDockerStub({ containerId: 'c0ffee123456', label: '1.7.1' }, (trace) =>
+			withoutAmbientPin(async () => {
+				const result = await initialize({
+					devcontainerDir,
+					dryRun: false,
+					cwd: projectDir,
+					input: PIPED_STDIN(),
+					ask: neverAsked,
+					probe: LINUX_PROBE,
+					...capture,
+				})
+				// The label is read off the container the probe already found, not
+				// from a second `docker ps` of its own.
+				assert.match(trace(), /^inspect --format \{\{index \.Config\.Labels "org\.stitchu\.base\.version"\}\} c0ffee123456$/m)
+				assert.equal((trace().match(/^ps -a -q --filter/gm) ?? []).length, 1, 'one container probe, not two')
+				return result
+			}),
+		)
+
+		assert.equal(code, 0, 'a non-interactive run reports and hands over')
+		const screen = capture.text()
+		assert.match(screen, /^ {4}mode {9}reopen$/m, 'only a reopen can drift')
+		assert.match(screen, /^\[!\] the container runs base 1\.7\.1, but this tree pins 1\.8\.0$/m)
+		// The closing panel carries it as one subject, with the consequence hung
+		// under the label rather than split into a row of its own.
+		assert.match(screen, /^\[!\] base version pin 1\.8\.0, running 1\.7\.1$/m)
+		assert.match(screen, /^ {17}Rebuild Container to adopt 1\.8\.0$/m)
+		assert.match(screen, /^ready, 1 warning: base version$/m, 'the verdict names it rather than counting it')
+	} finally {
+		cleanup()
+	}
+})
+
+test('no drift when the container runs exactly what the tree pins', async () => {
+	const { projectDir, devcontainerDir, cleanup } = fixture()
+	const capture = captured()
+	try {
+		pinBaseImage(devcontainerDir)
+		const code = await withDockerStub({ containerId: 'c0ffee123456', label: PINNED }, () =>
+			withoutAmbientPin(() =>
+				initialize({
+					devcontainerDir,
+					dryRun: false,
+					cwd: projectDir,
+					input: PIPED_STDIN(),
+					ask: neverAsked,
+					probe: LINUX_PROBE,
+					...capture,
+				}),
+			),
+		)
+		assert.equal(code, 0)
+		const screen = capture.text()
+		assert.doesNotMatch(screen, /base version/)
+		assert.match(screen, /^ready, all clear$/m)
+	} finally {
+		cleanup()
+	}
+})
+
+// The two ways the label cannot be read, which must look identical from here:
+// an image built before the label existed answers with an empty line and exit 0,
+// and a daemon that will not talk answers non-zero. Neither is a drift, and
+// reporting one would send someone into a rebuild they do not need.
+for (const [name, stub] of [
+	['an image from before the label', { containerId: 'c0ffee123456' }],
+	['a daemon that will not answer', { containerId: 'c0ffee123456', inspectFails: true }],
+] as const) {
+	test(`silent on ${name}`, async () => {
+		const { projectDir, devcontainerDir, cleanup } = fixture()
+		const capture = captured()
+		try {
+			pinBaseImage(devcontainerDir)
+			const code = await withDockerStub(stub, () =>
+				withoutAmbientPin(() =>
+					initialize({
+						devcontainerDir,
+						dryRun: false,
+						cwd: projectDir,
+						input: PIPED_STDIN(),
+						ask: neverAsked,
+						probe: LINUX_PROBE,
+						...capture,
+					}),
+				),
+			)
+			assert.equal(code, 0)
+			const screen = capture.text()
+			assert.doesNotMatch(screen, /base version/)
+			assert.doesNotMatch(screen, /runs base/)
+			assert.match(screen, /^ready, all clear$/m)
+		} finally {
+			cleanup()
+		}
+	})
+}
+
+test('no container, no drift — there is nothing running to disagree with the pin', async () => {
+	// A first build or a rebuild creates the container from the pin, so a label
+	// read off some other container would be a fact about nothing.
+	const { projectDir, devcontainerDir, cleanup } = fixture()
+	const capture = captured()
+	try {
+		pinBaseImage(devcontainerDir)
+		const code = await withDockerStub({ label: '1.7.1' }, (trace) =>
+			withoutAmbientPin(async () => {
+				const result = await initialize({
+					devcontainerDir,
+					dryRun: false,
+					cwd: projectDir,
+					input: PIPED_STDIN(),
+					ask: neverAsked,
+					probe: LINUX_PROBE,
+					...capture,
+				})
+				assert.doesNotMatch(trace(), /^inspect --format/m, 'the label is never even asked for')
+				return result
+			}),
+		)
+		assert.equal(code, 0)
+		assert.doesNotMatch(capture.text(), /base version/)
+	} finally {
+		cleanup()
+	}
+})
+
+test('drift, answered yes: the run refuses, non-zero, and says the error is the refusal', async () => {
+	// The hand-back mechanism, measured on 2026-10-06 against Dev Containers
+	// 0.459.1: a non-zero initializeCommand makes `devContainersSpecCLI.js up`
+	// fail outright — once, no retry — before any container work happens. So this
+	// exit IS the rebuild request, and the CLI never stops or removes anything.
+	const { projectDir, devcontainerDir, cleanup } = fixture()
+	const capture = captured()
+	const ask = answering('y')
+	try {
+		pinBaseImage(devcontainerDir)
+		const code = await withDockerStub({ containerId: 'c0ffee123456', label: '1.7.1' }, () =>
+			withoutAmbientPin(() =>
+				initialize({
+					devcontainerDir,
+					dryRun: false,
+					cwd: projectDir,
+					input: TTY_STDIN(),
+					ask,
+					probe: LINUX_PROBE,
+					...capture,
+				}),
+			),
+		)
+
+		assert.equal(code, 1, 'the only non-zero this command returns from its body')
+		const screen = capture.text()
+		// The question text is only in `asked`: `ask` is injected here, so nothing
+		// writes the prompt to the capture the way a real readline would.
+		assert.match(screen, /^\[!\] Stopping so VS Code can rebuild - the container runs base 1\.7\.1, not 1\.8\.0\.$/m)
+		// The user is about to see a failed-initializeCommand error; saying so is
+		// the difference between a refusal and a crash.
+		assert.match(screen, /VS Code will report a failed initializeCommand\. That is this refusal, not a fault\./)
+		assert.match(screen, /Dev Containers: Rebuild Container/)
+		// Nothing past the refusal ran: no closing verdict, no Claude-mode prompt,
+		// no hand-over sentence for a boot that is not happening.
+		assert.doesNotMatch(screen, /^ready, /m)
+		assert.doesNotMatch(screen, /VS Code is (building|reopening)/)
+		assert.deepEqual(
+			ask.asked.map((question) => question.trim()),
+			['Rebuild the container to adopt 1.8.0? [y/N]'],
+			'the question defaults to no, and nothing was asked after it',
+		)
+	} finally {
+		cleanup()
+	}
+})
+
+test('drift, answered no: the run carries on and the verdict keeps the trace', async () => {
+	const { projectDir, devcontainerDir, cleanup } = fixture()
+	const capture = captured()
+	// The drift question, then the Claude mode, then the Enter that hands over.
+	const ask = answering('n', '2', '')
+	try {
+		pinBaseImage(devcontainerDir)
+		const code = await withDockerStub({ containerId: 'c0ffee123456', label: '1.7.1' }, () =>
+			withoutAmbientPin(() =>
+				initialize({
+					devcontainerDir,
+					dryRun: false,
+					cwd: projectDir,
+					input: TTY_STDIN(),
+					ask,
+					probe: LINUX_PROBE,
+					...capture,
+				}),
+			),
+		)
+
+		assert.equal(code, 0)
+		const screen = capture.text()
+		assert.doesNotMatch(screen, /Stopping so VS Code can rebuild/)
+		assert.match(screen, /^\[!\] base version pin 1\.8\.0, running 1\.7\.1$/m)
+		assert.match(screen, /^ {17}Rebuild Container to adopt 1\.8\.0$/m)
+		// Two, because this fixture ships no notify daemon — the point is that the
+		// verdict names the drift rather than folding it into a count.
+		assert.match(screen, /^ready, 2 warnings: notify, base version$/m)
+		assert.match(screen, /^\[\+\] claude {7}reviewer$/m, 'and the rest of the run happened')
+		assert.match(ask.asked[0] ?? '', /Rebuild the container to adopt 1\.8\.0\?/)
+		assert.equal(ask.asked.length, 3, 'drift, then Claude mode, then the hand-over pause')
+	} finally {
+		cleanup()
+	}
+})
+
+test('drift under --dry-run: reported, never asked, never fatal', async () => {
+	// A dry run reports every decision and writes nothing. Blocking on a question
+	// or refusing would make it do something, which is the one thing it must not.
+	const { projectDir, devcontainerDir, cleanup } = fixture()
+	const capture = captured()
+	const ask = answering('')
+	try {
+		pinBaseImage(devcontainerDir)
+		const code = await withDockerStub({ containerId: 'c0ffee123456', label: '1.7.1' }, () =>
+			withoutAmbientPin(() =>
+				initialize({
+					devcontainerDir,
+					dryRun: true,
+					cwd: projectDir,
+					input: TTY_STDIN(),
+					ask,
+					probe: LINUX_PROBE,
+					...capture,
+				}),
+			),
+		)
+		assert.equal(code, 0)
+		const screen = capture.text()
+		assert.match(screen, /^\[!\] the container runs base 1\.7\.1, but this tree pins 1\.8\.0$/m)
+		assert.match(screen, /^\[!\] base version pin 1\.8\.0, running 1\.7\.1$/m)
+		for (const question of ask.asked) assert.doesNotMatch(question, /Rebuild the container/)
 	} finally {
 		cleanup()
 	}

@@ -23,6 +23,7 @@ import {
 	type RebuildSignals,
 	detectRebuildSignals,
 	hasDocker,
+	readContainerBaseVersion,
 	volumeCreate,
 } from '../lib/docker.js'
 import { readEnvFile, setEnvVar, uncommentEnvVar, unsetEnvVar } from '../lib/env-file.js'
@@ -219,6 +220,16 @@ async function runInitialize(context: Context): Promise<number> {
 	logger.log(start.warn ? `${MARK_WARN} ${start.consequence}` : `${MARK_STEP} ${start.consequence}`)
 	const unpublished = unpublishedLine(image)
 	if (unpublished !== null) logger.log(`${MARK_WARN} ${unpublished}`)
+	// The panel above says what the tree pins. On a reopen that is not what is
+	// running, and until now nothing said so: the 2026-10-06 incident spent a
+	// morning on a container two patch versions behind the pin the panel named.
+	// The fact belongs here, under the panel it corrects; the question it raises
+	// waits for the interactive block, which is where `ask` exists.
+	const drift = baseVersionDrift(image, signals)
+	if (drift !== null) {
+		logger.log(`${MARK_WARN} ${driftLine(drift)}`)
+		logger.trace({ kind: 'decide', name: 'BASE_VERSION_DRIFT', value: drift.running, why: `tree pins ${drift.pinned}` })
+	}
 
 	// === Firewall + sidecar seeding (initialize.sh:125-158) ==================
 	// Must run before compose builds — the Dockerfile COPYs this directory.
@@ -257,7 +268,7 @@ async function runInitialize(context: Context): Promise<number> {
 			writeFlag(firewallFlag, 'strict', dryRun, logger)
 		}
 		syncProxyEnv(envFile, readMode(firewallFlag), dryRun, logger)
-		printSummary({ devcontainerDir, modeFlag, firewallFlag, logger, dryRun, projectId, notify: null, start })
+		printSummary({ devcontainerDir, modeFlag, firewallFlag, logger, dryRun, projectId, notify: null, start, drift })
 		sayClosing(logger, start)
 		return 0
 	}
@@ -281,6 +292,34 @@ async function runInitialize(context: Context): Promise<number> {
 		})
 
 	try {
+		// Asked before anything else here. If the answer is yes this boot is over,
+		// and there is no sense prompting for a Claude mode or spawning a daemon
+		// for a container that is about to be replaced. Deliberately not hung off
+		// `promptedClaudeMode`: that flag means "first run", and a drift is the
+		// opposite — it takes an existing container to have one.
+		if (drift !== null && !dryRun) {
+			const answer = (await ask(`  ${driftQuestion(drift)} `)).trim().toLowerCase()
+			if (answer === 'y' || answer === 'yes') {
+				// The answer echoes on the prompt line. Only this branch needs the
+				// blank: everything the other one leads to opens with one of its own
+				// (promptClaudeMode, or titledBlock when the flag already exists).
+				logger.log('')
+				// Non-zero is the whole mechanism: VS Code runs this as
+				// initializeCommand and a non-zero exit cancels the open — measured,
+				// once, with no retry. So this exit *is* the hand-back, and the CLI
+				// never has to stop or delete anything itself. The message says the
+				// error is coming, because the user is about to see one and it is
+				// this refusal rather than a fault.
+				logger.error(`${MARK_WARN} Stopping so VS Code can rebuild - the container runs base ${drift.running}, not ${drift.pinned}.`)
+				logger.error('    VS Code will report a failed initializeCommand. That is this refusal, not a fault.')
+				logger.error('    Run "Dev Containers: Rebuild Container" from the Command Palette.')
+				// Literal, like the two refusals in initialize() above: importing
+				// EXIT_FAILURE from cli.ts would close a cycle, since cli.ts imports
+				// this module.
+				return 1
+			}
+		}
+
 		let promptedClaudeMode = false
 		// Reachable on a genuine first run since the GitHub Auth step was
 		// removed: that step seeded this flag as a side effect, which is what
@@ -304,7 +343,7 @@ async function runInitialize(context: Context): Promise<number> {
 		// Spawned before the panel, not after: its outcome is one of the panel's
 		// rows, and a panel that reports the boot has to be the last thing drawn.
 		const notify = await spawnNotifyDaemon({ logger, devcontainerDir, projectDir, dryRun })
-		printSummary({ devcontainerDir, modeFlag, firewallFlag, logger, dryRun, projectId, notify, start })
+		printSummary({ devcontainerDir, modeFlag, firewallFlag, logger, dryRun, projectId, notify, start, drift })
 
 		// Pause only when an interactive prompt actually ran. The Claude-mode
 		// prompt is the only one left, and since the GitHub Auth step stopped
@@ -491,10 +530,11 @@ interface SummaryOptions {
 	projectId: string
 	notify: NotifyReport | null
 	start: StartMode
+	drift: BaseDrift | null
 }
 
 function printSummary(options: SummaryOptions): void {
-	const { devcontainerDir, modeFlag, firewallFlag, logger, dryRun, notify, start } = options
+	const { devcontainerDir, modeFlag, firewallFlag, logger, dryRun, notify, start, drift } = options
 	const claudeLabel = existsSync(modeFlag)
 		? readFileSync(modeFlag, 'utf8').trim().replace(/^CLAUDE-/, '').replace(/\.md$/, '')
 		: 'dev'
@@ -509,6 +549,9 @@ function printSummary(options: SummaryOptions): void {
 	const warnings: string[] = []
 	if (hosts > 0 || policy > 0) warnings.push('overrides')
 	if (notify?.state === 'warn') warnings.push('notify')
+	// Named with the same string the row carries: the verdict enumerates rather
+	// than counts, so the two have to be one word for one thing.
+	if (drift !== null) warnings.push(DRIFT_LABEL)
 
 	// The verdict names what is wrong rather than only counting it: these lines
 	// get pasted into tickets, where every escape is stripped, and "1 warning"
@@ -540,6 +583,17 @@ function printSummary(options: SummaryOptions): void {
 							'notify',
 							notify.why === null ? notify.value : [notify.value, ...notify.why.split('; ')].join('\n'),
 							notify.state,
+						] as Row,
+					]),
+			// Two facts, one subject — titledBlock hangs the second under the
+			// label, the way the notify row carries its reasons.
+			...(drift === null
+				? []
+				: [
+						[
+							DRIFT_LABEL,
+							`pin ${drift.pinned}, running ${drift.running}\nRebuild Container to adopt ${drift.pinned}`,
+							'warn',
 						] as Row,
 					]),
 			['', ''],
@@ -701,6 +755,60 @@ function unpublishedLine(image: BaseImage | null): string | null {
 	if (image === null || image.claudeCode === null) return null
 	if (PUBLISHED_CLAUDE_CODE_VERSIONS.includes(image.claudeCode)) return null
 	return `claude code ${image.claudeCode} is not a published line (${PUBLISHED_CLAUDE_CODE_VERSIONS.join(', ')}) - the pull will fail`
+}
+
+/**
+ * The label this fact carries, in the verdict and in the row alike.
+ *
+ * Exactly HEADER_LABEL wide, which is what keeps the value column where every
+ * other row puts it.
+ */
+const DRIFT_LABEL = 'base version'
+
+/** The pin, and what is actually running under it. */
+interface BaseDrift {
+	pinned: string
+	running: string
+}
+
+/**
+ * The pin against reality, when both are knowable.
+ *
+ * Only a reopen can drift: with no container there is nothing running to
+ * disagree with, and VS Code is about to create one from the pin either way.
+ * Everything else here is a reason to say nothing — a ref that is not ours
+ * (`sandbox` null), a daemon that will not answer, an image from before the
+ * label. Silence is the only safe default: a false drift report would send
+ * someone into a rebuild they do not need.
+ *
+ * Deliberately narrow: the sandbox version and nothing else. Not the Claude
+ * Code version, which `unpublishedLine` already judges, and not the full ref,
+ * which differs between hosts for reasons that are not drift.
+ */
+function baseVersionDrift(image: BaseImage | null, signals: RebuildSignals): BaseDrift | null {
+	const { containerId } = signals
+	if (containerId === null) return null
+	const pinned = image?.sandbox
+	if (pinned === undefined || pinned === null) return null
+	const running = readContainerBaseVersion(containerId)
+	if (running === null || running === pinned) return null
+	return { pinned, running }
+}
+
+/** The one line that says the panel above describes an image that is not running. */
+function driftLine(drift: BaseDrift): string {
+	return `the container runs base ${drift.running}, but this tree pins ${drift.pinned}`
+}
+
+/**
+ * The question, defaulting to carrying on.
+ *
+ * `N` is the default because the refusal costs a boot: someone who did not read
+ * the line above should end up in the container they already had, not in a
+ * cancelled open they did not ask for.
+ */
+function driftQuestion(drift: BaseDrift): string {
+	return `Rebuild the container to adopt ${drift.pinned}? [y/N]`
 }
 
 interface StartMode {

@@ -53,6 +53,14 @@ export function imageExists(tag: string): boolean {
 export interface RebuildSignals {
 	/** True when no container matches this workspace — rebuild or first-time. */
 	requested: boolean
+	/**
+	 * The container that matched this workspace, or null when none did.
+	 *
+	 * Carried rather than re-derived: the probe below already pays for the
+	 * `docker ps`, and the only thing that can say which base version is
+	 * *running* is a label read off that exact container.
+	 */
+	containerId: string | null
 }
 
 export interface DetectContext {
@@ -83,7 +91,7 @@ export interface DetectContext {
 export function detectRebuildSignals(context: DetectContext): RebuildSignals {
 	const { logger } = context
 
-	if (!hasDocker()) return { requested: false }
+	if (!hasDocker()) return { requested: false, containerId: null }
 
 	// VS Code writes these labels in host-native format (C:\… on Windows).
 	// The POSIX form held here never matches on WSL / Git Bash, so translate.
@@ -108,11 +116,43 @@ export function detectRebuildSignals(context: DetectContext): RebuildSignals {
 	if (containerId.length === 0) {
 		logger.rawToLogOnly('  ↳ No matching devcontainer for this workspace — rebuild or first-time')
 		logger.trace({ kind: 'decide', name: 'BUILD_BASE_REQUESTED', value: '1', why: 'no container matched labels' })
-		return { requested: true }
+		return { requested: true, containerId: null }
 	}
 	logger.rawToLogOnly(`  ↳ Devcontainer present (${containerId}, any state) — reopen, no base rebuild`)
 	logger.trace({ kind: 'decide', name: 'BUILD_BASE_REQUESTED', value: '0', why: `container ${containerId} present` })
-	return { requested: false }
+	return { requested: false, containerId }
+}
+
+/** The label the base image bakes in at its last layer. */
+export const BASE_VERSION_LABEL = 'org.stitchu.base.version'
+
+/**
+ * The base version baked into the image a container was created from.
+ *
+ * Null when nothing can be said, which is two cases that must not be told
+ * apart by the caller: docker absent or the daemon silent (`runCapture` returns
+ * null), and an image from before the label existed — that one exits 0 with an
+ * empty line, because a Go template indexing a missing key yields the zero
+ * value. Verified against this host's daemon: `Config.Labels` null prints
+ * nothing and succeeds. Either way the caller must stay quiet rather than
+ * report a drift it cannot see.
+ *
+ * Read from the container and not the image: a project Dockerfile extends the
+ * base (`FROM ${BASE_IMAGE}`) and declares no label of its own, so the base's
+ * labels are inherited — confirmed on a real compose-built container, which
+ * answers the base version alongside its own compose labels.
+ */
+export function readContainerBaseVersion(containerId: string): string | null {
+	const captured = runCapture([
+		'docker',
+		'inspect',
+		'--format',
+		`{{index .Config.Labels "${BASE_VERSION_LABEL}"}}`,
+		containerId,
+	])
+	if (captured === null) return null
+	const version = captured.trim()
+	return version.length === 0 ? null : version
 }
 
 /**
