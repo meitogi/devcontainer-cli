@@ -34,7 +34,8 @@
     "build": "tsc -p .",
     "watch": "tsc -p . --watch",
     "test": "tsc -p . && node --test dist/test/*.test.js",
-    "prepublishOnly": "npm test"
+    "prepublishOnly": "npm test",
+    "release-check": "bash test/release-check.sh"
   },
   "devDependencies": {
     "@types/node": "^18.19.130",

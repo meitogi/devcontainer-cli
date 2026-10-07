@@ -5,7 +5,9 @@ Maintainer documentation. If you only consume the package, you want
 
 ## Steps
 
-0. Two checks on what is about to ship.
+0. `npm run release-check` — it replays the `guard` job locally, prunes
+   `dist/` before the suite, and runs the `notify/` tests and the jargon grep
+   below.
 
    - **`notify/` is edited here.** The dogfood's `.devcontainer/notify/` used
      to be the development tree, re-copied over this one before each release;
@@ -183,3 +185,7 @@ guarantee for about a minute.
   misspelled deliberately.** npm unconditionally drops files named
   `.gitignore` from a tarball. `test/template.test.ts` asserts every template
   file appears in the `npm pack` listing, which is what keeps that true.
+- **`test/release-check.sh` runs `rm -rf dist` before the suite, on
+  purpose.** `tsc -p .` does not prune `dist/`: a test file deleted from
+  `test/` keeps running from its stale compiled `.js`, and the suite stays
+  green on dead code (D169). Do not drop the `rm -rf dist` to save a rebuild.
