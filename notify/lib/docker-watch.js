@@ -22,7 +22,17 @@
 // seconds to come back up after sleep, and an immediate exit on the first
 // post-wake tick was the bug this grace fixes.
 //
-// Outside that 30 s window the behavior is unchanged : `initialize.sh`
+// WHILE THE OPENER RUNS : the daemon is spawned by `initializeCommand`,
+// before the image build and before Docker Desktop's VM is necessarily up.
+// The process that ran `initializeCommand` (the devcontainer CLI's `up`) is
+// the one that goes on to build the image and create the container. Until
+// the probe has seen the container `running` once, a `gone` (still building)
+// or an `error` (VM still booting) is not a shutdown as long as that opener
+// is alive. If the opener exits first, the open failed or was cancelled and
+// the daemon exits. With no opener resolved (no `ps`, manual launch), the
+// first non-running probe exits, as before.
+//
+// Outside those windows the behavior is unchanged : `initialize.sh`
 // re-spawns the daemon at the next container open, so a real container-gone
 // exit is at worst a 60 s gap before the next user action re-fires it.
 //
@@ -58,6 +68,10 @@ const POST_WAKE_GRACE_MS = 30_000
  * debugging), the poll is disabled and a warning is logged. The daemon
  * will then live until the OS session ends or the user kills it.
  *
+ * Until the first `running` probe, non-running results are suppressed while
+ * `openerAlive()` returns true : the open that will create the container is
+ * still under way.
+ *
  * The interval handle is unref'd so it doesn't keep the event loop alive
  * once everything else has shut down.
  *
@@ -65,15 +79,17 @@ const POST_WAKE_GRACE_MS = 30_000
  * @param {import('events').EventEmitter} opts.bus   emit target for 'container:gone', listens for 'system:wake'
  * @param {string} opts.projectDir                   absolute host path matching the devcontainer.local_folder label
  * @param {number} opts.intervalMs                   poll cadence in ms (60_000 in prod)
+ * @param {() => boolean} [opts.openerAlive]          is the process that ran initializeCommand still running
  * @returns {void}                                   schedules the poll, returns immediately
  */
-function start({ bus, projectDir, intervalMs }) {
+function start({ bus, projectDir, intervalMs, openerAlive }) {
 	if (!projectDir) {
 		log.warn('[docker-watch] no projectDir passed — disabled (daemon will outlive container)')
 		return
 	}
 
 	let graceUntil = 0
+	let seen = false
 	bus.on('system:wake', ({ gapMs }) => {
 		graceUntil = Date.now() + POST_WAKE_GRACE_MS
 		log.info(`[docker-watch] system:wake (gap=${gapMs}ms) — grace ${POST_WAKE_GRACE_MS}ms before container:gone is allowed`)
@@ -81,7 +97,18 @@ function start({ bus, projectDir, intervalMs }) {
 
 	const tick = () => {
 		const r = probe(projectDir)
-		if (r.status === 'running') return
+		if (r.status === 'running') {
+			if (!seen) log.info(`[docker-watch] ${r.detail} — first sighting, container:gone armed`)
+			seen = true
+			return
+		}
+		if (!seen && openerAlive) {
+			if (openerAlive()) {
+				log.info(`[docker-watch] ${r.detail} — container not seen yet, the opener still runs (build or VM boot), skipping container:gone`)
+				return
+			}
+			log.info(`[docker-watch] ${r.detail} — the opener exited before the container appeared`)
+		}
 		if (Date.now() < graceUntil) {
 			log.info(`[docker-watch] ${r.detail} — within post-wake grace, skipping container:gone`)
 			return

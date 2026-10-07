@@ -132,4 +132,28 @@ function start({ bus, launcherPid, intervalMs }) {
 	handle.unref?.()
 }
 
-module.exports = { start }
+// The process that ran initializeCommand : the first non-shell ancestor above
+// `launcherPid` (the `devc initialize` process). It is the devcontainer CLI's
+// `up`, which goes on to build the image and create the container, so while it
+// runs the open is still under way. Null when the walk finds nothing (no `ps`,
+// launcher already gone). Resolve it at daemon start, while the launcher lives.
+function openerOf(launcherPid) {
+	let cur = launcherPid > 1 ? ppidOf(launcherPid) : 0
+	for (let depth = 0; depth < 15 && cur > 1; depth++) {
+		const comm = commOf(cur)
+		if (!comm) return null
+		if (!SHELL_RE.test(comm)) return { pid: cur, comm, lstart: lstartOf(cur) }
+		cur = ppidOf(cur)
+	}
+	return null
+}
+
+// Same process as when resolved : `kill -0` plus an unchanged start time, so a
+// recycled PID does not keep the open looking alive.
+function isAlive({ pid, lstart }) {
+	try { process.kill(pid, 0) } catch (_) { return false }
+	const now = lstartOf(pid)
+	return !lstart || !now || now === lstart
+}
+
+module.exports = { start, openerOf, isAlive }

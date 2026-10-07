@@ -329,10 +329,15 @@ inboundWatch.start({
 // `no matching container`) so the daemon_stopped notif tells the user what
 // actually broke without forcing them to grep daemon.log.
 if (DOCKER_POLL_MS > 0) {
+	const opener = launcherWatch.openerOf(_launcherPidArg)
+	log.info(opener
+		? `[docker-watch] opener pid=${opener.pid} comm="${opener.comm}" — container:gone waits for it until the container is first seen`
+		: '[docker-watch] no opener resolved — the first non-running probe shuts down')
 	dockerWatch.start({
 		bus,
 		projectDir: hostKind === 'windows' ? `\\\\wsl.localhost\\${host.getHostSignals().wslDistro || 'Debian'}${projectDir.replace(/\//g, '\\')}` : projectDir,
 		intervalMs: DOCKER_POLL_MS,
+		openerAlive: opener ? () => launcherWatch.isAlive(opener) : undefined,
 	})
 } else log.info('[docker-watch] disabled via NOTIFY_DOCKER_POLL_MS=0')
 launcherWatch.start({ bus, launcherPid: _launcherPidArg, intervalMs: 5_000 })
