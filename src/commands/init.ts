@@ -12,7 +12,7 @@
 //   same      — a tree this CLI recognises: report, add what is missing, exit 0;
 //   different — anything else (v1/v2 trees, another tool's): refuse, exit 1.
 
-import { existsSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { detectStack, isStackId, STACKS, stackInfo, type StackId } from '../lib/detect-stack.js'
 import { readDevcontainerJson } from '../lib/devcontainer-json.js'
@@ -38,7 +38,16 @@ import { defaultProjectId, isValidProjectId, titlecase } from '../lib/paths.js'
 import { isBareWin32, readHostProbe, type HostProbe } from '../lib/platform.js'
 import { run } from '../lib/proc.js'
 import { choose, confirm, PromptAbandoned, readlineAsk, secret, text, type Ask, type PromptContext } from '../lib/prompts.js'
-import { applyPlan, buildPlan, classifyTarget, diffPlan, type ScaffoldAnswers } from '../lib/scaffold.js'
+import {
+	appendWtfEntries,
+	applyPlan,
+	buildPlan,
+	classifyTarget,
+	diffPlan,
+	missingWtfEntries,
+	type ScaffoldAnswers,
+	type ScaffoldPlan,
+} from '../lib/scaffold.js'
 import { CLI_NAME, CLI_VERSION } from '../lib/version.js'
 
 export interface InitOptions {
@@ -511,6 +520,7 @@ async function scaffold(wizard: WizardContext, answers: ScaffoldAnswers, extPatc
 	for (const path of result.kept) say(`    = ${path} (already there, kept)`)
 	say(`    ${result.gitignore === 'appended' ? '+' : '='} .gitignore (${result.gitignore})`)
 	for (const problem of result.symlinkProblems) err.write(`  ⚠ ${problem}\n`)
+	if (result.kept.includes('.wtfcmd.yaml')) await offerWtfMerge(wizard, plan)
 
 	if (extPatches !== null) {
 		const envFile = join(projectDir, '.devcontainer', '.env')
@@ -602,6 +612,30 @@ async function runInstaller(projectDir: string, argv: readonly string[]): Promis
 	}
 }
 
+/**
+ * A project that already has a root `.wtfcmd.yaml` keeps it: only the
+ * commands it does not define (same group + name) are offered, then appended.
+ */
+async function offerWtfMerge(wizard: WizardContext, plan: ScaffoldPlan): Promise<void> {
+	const { projectDir, options, context, interactive, say } = wizard
+	const file = join(projectDir, '.wtfcmd.yaml')
+	if (!existsSync(file)) return
+	const missing = missingWtfEntries(readFileSync(file, 'utf8'), plan.wtfcmdFragment)
+	if (missing.length === 0) {
+		say('    = .wtfcmd.yaml (wtf commands present)')
+		return
+	}
+	const names = missing.map((entry) => entry.key).join(', ')
+	const question = `Add ${missing.length} wtf command(s) to .wtfcmd.yaml? (${names})`
+	const add = !interactive || (await confirm(context, { question, defaultYes: true }))
+	if (!add) {
+		say('    = .wtfcmd.yaml (left as is)')
+		return
+	}
+	appendWtfEntries(file, missing, options.dryRun)
+	say(`    + .wtfcmd.yaml (${options.dryRun ? 'would add' : 'added'}: ${names})`)
+}
+
 /** State "same": nothing to re-scaffold; report, offer to add what is missing. */
 async function reportExisting(wizard: WizardContext): Promise<number> {
 	const { projectDir, options, context, interactive, say } = wizard
@@ -633,6 +667,7 @@ async function reportExisting(wizard: WizardContext): Promise<number> {
 	if (differs.length > 0) {
 		say(`  ${differs.length} managed file(s) differ from this version's template; they are not overwritten.`)
 	}
+	await offerWtfMerge(wizard, plan)
 	if (missing.length === 0) {
 		say('  Nothing to do.')
 		return 0

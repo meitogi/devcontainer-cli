@@ -70,6 +70,7 @@ export const OWNERSHIP: Readonly<Record<string, Ownership>> = {
 	'.devcontainer/hooks/post-start.d/README.md': 'seed',
 	'.devcontainer/skills/disabled.txt': 'seed',
 	'.claude/settings.local.json': 'user',
+	'.wtfcmd.yaml': 'seed',
 
 	// The host-side helpers. They run on the HOST, not in the container — the
 	// image cannot put a file on someone's Mac — and a project edits them, so
@@ -165,6 +166,8 @@ export interface ScaffoldPlan {
 	symlinks: PlannedSymlink[]
 	/** Appended to the root .gitignore; its first line is the idempotency sentinel. */
 	gitignoreFragment: string
+	/** The root `.wtfcmd.yaml` entries, merged into a project's own file when it exists. */
+	wtfcmdFragment: string
 	imageRef: string
 }
 
@@ -226,6 +229,11 @@ export function buildPlan(answers: ScaffoldAnswers, templatesDir = TEMPLATES_DIR
 	files.push({ path: '.claude/settings.local.json.example', content: settings, ownership: 'managed', executable: false })
 	files.push({ path: '.claude/settings.local.json', content: settings, ownership: 'user', executable: false })
 
+	// wtf only walks UP from cwd, so .devcontainer/.wtfcmd.yaml is invisible from
+	// the root; the root gets the same commands, with cwd pointing back down.
+	const wtfcmd = readFileSync(join(templatesDir, 'root', 'wtfcmd-root.yaml'), 'utf8')
+	files.push({ path: '.wtfcmd.yaml', content: wtfcmd, ownership: 'seed', executable: false })
+
 	// Code-point order, not localeCompare: the latter folds case by locale, and
 	// the plan's order must be the same on every machine.
 	files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
@@ -238,6 +246,7 @@ export function buildPlan(answers: ScaffoldAnswers, templatesDir = TEMPLATES_DIR
 			{ path: '.claude/rules/project.md', target: '../../.devcontainer/claude/CLAUDE-project.md' },
 		],
 		gitignoreFragment: readFileSync(join(templatesDir, 'root', 'gitignore-root'), 'utf8'),
+		wtfcmdFragment: wtfcmd,
 		imageRef: baseImageRef(answers.claudeCodeVersion, baseVersion),
 	}
 }
@@ -444,6 +453,53 @@ export function appendGitignore(file: string, fragment: string, dryRun: boolean)
 		writeFileSync(file, `${head}${fragment}`, 'utf8')
 	}
 	return 'appended'
+}
+
+/** A top-level `.wtfcmd.yaml` entry: its text, and its first group + name. */
+export interface WtfEntry {
+	key: string
+	text: string
+}
+
+/** First value of `key:` in an entry, unwrapping an alias list `[a, b]`. */
+function wtfField(text: string, key: string): string {
+	const match = new RegExp(`^(?:- |  )${key}:\\s*(.+)$`, 'm').exec(text)
+	if (match === null) return ''
+	const value = (match[1] ?? '').trim()
+	return (value.startsWith('[') ? value.slice(1, -1).split(',')[0] ?? '' : value).trim()
+}
+
+/** Split a `.wtfcmd.yaml` into its top-level entries, keyed `group name`. */
+function wtfEntries(text: string): WtfEntry[] {
+	const entries: WtfEntry[] = []
+	const lines = text.split('\n')
+	const count = lines.length
+	let start = -1
+	for (let i = 0; i <= count; i++) {
+		if (i < count && !(lines[i] ?? '').startsWith('- ')) continue
+		if (start >= 0) {
+			const body = lines.slice(start, i).join('\n').trimEnd()
+			entries.push({ key: `${wtfField(body, 'group')} ${wtfField(body, 'name')}`, text: body })
+		}
+		start = i
+	}
+	return entries
+}
+
+/** The fragment's entries whose group + name the project's file does not define. */
+export function missingWtfEntries(existing: string, fragment: string): WtfEntry[] {
+	const present: Record<string, true> = {}
+	for (const entry of wtfEntries(existing)) present[entry.key] = true
+	return wtfEntries(fragment).filter((entry) => present[entry.key] !== true)
+}
+
+/** Append entries to a project's `.wtfcmd.yaml`. Idempotent through missingWtfEntries. */
+export function appendWtfEntries(file: string, entries: WtfEntry[], dryRun: boolean): void {
+	if (entries.length === 0 || dryRun) return
+	let head = readFileSync(file, 'utf8')
+	if (head.length > 0 && !head.endsWith('\n')) head += '\n'
+	if (head.length > 0) head += '\n'
+	writeFileSync(file, `${head}${entries.map((entry) => entry.text).join('\n\n')}\n`, 'utf8')
 }
 
 function isDirectory(path: string): boolean {

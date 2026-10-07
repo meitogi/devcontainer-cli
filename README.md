@@ -86,7 +86,10 @@ Then it writes the thin project layer (~45 files: `devcontainer.json`,
 `Dockerfile`, `docker-compose.yml`, `.env`, `initialize.sh`, the firewall
 allowlist and its worked `policy.local.d.example/`, the hook and skill overlay
 directories, `claude/CLAUDE-*.md`, the host-side helpers, the generic test
-harness, a blank `LESSONS.md`), appends a fragment to the root `.gitignore`, links `LESSONS.md`
+harness, a blank `LESSONS.md`, the `wtf firewall` / `wtf ext-patch` commands in
+`.devcontainer/.wtfcmd.yaml` and at the root), appends a fragment to the root `.gitignore`,
+offers to add the missing commands to an existing root `.wtfcmd.yaml` (matched by group +
+name, never replacing yours), links `LESSONS.md`
 and `.claude/rules/*` at the root, adds itself as a devDependency to the root
 `package.json` and runs `npm install` — so the `npx --yes
 --package=@meitogi/devcontainer-cli@0.x devc initialize` that `initialize.sh`

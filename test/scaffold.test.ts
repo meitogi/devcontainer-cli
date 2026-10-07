@@ -10,11 +10,13 @@ import { readDevcontainerJson, readStitchuCustomizations } from '../src/lib/devc
 import { readEnvFile } from '../src/lib/env-file.js'
 import {
 	appendGitignore,
+	appendWtfEntries,
 	applyPlan,
 	buildPlan,
 	classifyTarget,
 	diffPlan,
 	EXECUTABLE,
+	missingWtfEntries,
 	OWNERSHIP,
 	type ScaffoldAnswers,
 } from '../src/lib/scaffold.js'
@@ -35,6 +37,7 @@ const EXPECTED_FILES = [
 	'.devcontainer/.env',
 	'.devcontainer/.env.example',
 	'.devcontainer/.gitignore',
+	'.devcontainer/.wtfcmd.yaml',
 	'.devcontainer/Dockerfile',
 	'.devcontainer/LESSONS.md',
 	'.devcontainer/claude/CLAUDE-dev.md',
@@ -74,6 +77,7 @@ const EXPECTED_FILES = [
 	'.devcontainer/tests/validate-claude-switch.sh',
 	'.devcontainer/vscode-settings.jsonc',
 	'.devcontainer/zshrc.local.example',
+	'.wtfcmd.yaml',
 ]
 
 function scratch(): { dir: string; cleanup: () => void } {
@@ -238,6 +242,55 @@ test('appendGitignore separates from existing content and repairs a missing newl
 		// A v2 block from install.sh does not count as the v3 sentinel.
 		writeFileSync(file, '# DevContainer (v2) — root-scope\n.claude/*\n', 'utf8')
 		assert.equal(appendGitignore(file, '# DevContainer (v3) — root-scope\n.claude/*\n', false), 'appended')
+	} finally {
+		cleanup()
+	}
+})
+
+test('missingWtfEntries offers every devcontainer command to a file that has none', () => {
+	const fragment = buildPlan(ANSWERS).wtfcmdFragment
+	const keys = missingWtfEntries('- name: dev\n  cmd: npm run dev\n', fragment).map((entry) => entry.key)
+	assert.deepEqual(keys, ['firewall diff', 'firewall reload', 'ext-patch status', 'ext-patch update'])
+	// The payload survives, not just the key: the reload keeps its TTY flags.
+	const reload = missingWtfEntries('', fragment).find((entry) => entry.key === 'firewall reload')
+	assert.match(reload?.text ?? '', /docker exec -it -u 0 "\$c" reload-firewall/)
+})
+
+test('missingWtfEntries matches on group + name, alias lists included', () => {
+	const fragment = buildPlan(ANSWERS).wtfcmdFragment
+	const existing = [
+		'- group: [firewall, fw]',
+		'  name: [diff, d]',
+		'  desc: Mine.',
+		'  cmd: echo mine',
+		'',
+		'- group: ext-patch',
+		'  name: status',
+		'  cmd: echo mine',
+		'  flags:',
+		'    - name: update',
+		'      desc: A flag named like a command is not a command.',
+	].join('\n')
+	const keys = missingWtfEntries(existing, fragment).map((entry) => entry.key)
+	assert.deepEqual(keys, ['firewall reload', 'ext-patch update'])
+})
+
+test('appendWtfEntries keeps the existing file byte for byte and is idempotent', () => {
+	const { dir, cleanup } = scratch()
+	try {
+		const file = join(dir, '.wtfcmd.yaml')
+		const mine = '# header\n- name: dev\n  cmd: npm run dev'
+		writeFileSync(file, mine, 'utf8')
+		const fragment = buildPlan(ANSWERS).wtfcmdFragment
+
+		appendWtfEntries(file, missingWtfEntries(mine, fragment), true)
+		assert.equal(readFileSync(file, 'utf8'), mine, 'dry-run writes nothing')
+
+		appendWtfEntries(file, missingWtfEntries(mine, fragment), false)
+		const merged = readFileSync(file, 'utf8')
+		assert.ok(merged.startsWith(`${mine}\n\n- group: firewall\n`))
+		assert.equal(missingWtfEntries(merged, fragment).length, 0)
+		assert.equal(merged.trimEnd(), `${mine}\n\n${fragment.trimEnd()}`)
 	} finally {
 		cleanup()
 	}

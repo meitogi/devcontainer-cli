@@ -350,6 +350,33 @@ test('--dry-run writes nothing and installs nothing', async () => {
 	}
 })
 
+test("an existing root .wtfcmd.yaml keeps its commands and gains the devcontainer ones", async () => {
+	const { dir, cleanup } = scratch()
+	try {
+		const file = join(dir, '.wtfcmd.yaml')
+		const mine = '- name: dev\n  desc: Mine.\n  cmd: npm run dev\n'
+		writeFileSync(file, mine, 'utf8')
+
+		const dry = await runInit(dir, { dryRun: true })
+		assert.equal(dry.code, 0, dry.err)
+		assert.match(dry.out, /\+ \.wtfcmd\.yaml \(would add: firewall diff, firewall reload, ext-patch status, ext-patch update\)/)
+		assert.equal(readFileSync(file, 'utf8'), mine, 'dry-run leaves the file alone')
+
+		const run = await runInit(dir)
+		assert.equal(run.code, 0, run.err)
+		assert.match(run.out, /\+ \.wtfcmd\.yaml \(added: firewall diff, firewall reload, ext-patch status, ext-patch update\)/)
+		const merged = readFileSync(file, 'utf8')
+		assert.ok(merged.startsWith(`${mine}\n- group: firewall\n  name: diff\n  cwd: ./.devcontainer\n`))
+
+		const again = await runInit(dir)
+		assert.equal(again.code, 0, again.err)
+		assert.match(again.out, /= \.wtfcmd\.yaml \(wtf commands present\)/)
+		assert.equal(readFileSync(file, 'utf8'), merged, 'a re-run appends nothing')
+	} finally {
+		cleanup()
+	}
+})
+
 test('--no-install leaves the install as the first next step', async () => {
 	const { dir, cleanup } = scratch()
 	try {

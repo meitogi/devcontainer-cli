@@ -1,0 +1,49 @@
+- group: firewall
+  name: diff
+  cwd: ./.devcontainer
+  desc: Preview the .local firewall layer diff (host, no privileges).
+  cmd: |
+    c=$(docker compose ps -q app 2>/dev/null | head -1)
+    [ -n "$c" ] || { echo "no running 'app' service — run this from the HOST." >&2; exit 1; }
+    docker exec "$c" reload-firewall --dry-run
+
+- group: firewall
+  name: reload
+  cwd: ./.devcontainer
+  desc: Apply the .local firewall layer to the running container (host, root + TTY).
+  cmd: |
+    c=$(docker compose ps -q app 2>/dev/null | head -1)
+    [ -n "$c" ] || { echo "no running 'app' service — run this from the HOST." >&2; exit 1; }
+    docker exec -it -u 0 "$c" reload-firewall
+
+- group: ext-patch
+  name: status
+  desc: Show configured, cached and live extension patches. Read-only.
+  cmd: ext-patches-sync --status
+
+- group: ext-patch
+  name: update
+  desc: Install a patch set (latest by default) and move EXT_PATCHES_REF.
+  flags:
+    - name: check
+      desc: Show installed and available, then stop.
+      default: ""
+      test: "$bool"
+    - name: ref
+      desc: Install this tag or commit SHA.
+      default: ""
+    - name: dir
+      desc: Apply from a local checkout, no network.
+      default: ""
+    - name: reapply
+      desc: Replay the current ref from the cache.
+      default: ""
+      test: "$bool"
+    - name: no-write-env
+      desc: Apply without moving the pin.
+      default: ""
+      test: "$bool"
+  cmd: >-
+    ext-patches-update{{ if .check }} --check{{ end }}{{ if .ref }} --ref
+    {{ .ref }}{{ end }}{{ if .dir }} --dir {{ .dir }}{{ end }}{{ if .reapply }}
+    --reapply{{ end }}{{ if .no_write_env }} --no-write-env{{ end }}
