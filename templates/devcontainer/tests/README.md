@@ -21,7 +21,7 @@ tests/
 
 | Tier | Where it runs | Privilege | What it checks |
 |---|---|---|---|
-| **unit/** | Host or container, anytime | none | Repo invariants — file presence, syntax, gitignore structure, install.sh migration logic on a tmpdir |
+| **unit/** | Host or container, anytime | none | Repo invariants — file presence, syntax, gitignore structure |
 | **integration/** | Inside a rebuilt devcontainer | `node` (no sudo on iptables — sudoers only allows init-firewall.sh / test-firewall.sh) | Runtime behavior observable as node — EROFS on `/etc/` writes, workspace decoupling, vector regression, behavioral firewall probes (curl) |
 | **host/** | From the host machine (refuses to run in container) | root via `docker exec -u root` | Privileged checks node can't do — iptables rules, ipset contents, mitmproxy listen socket via `ss` |
 
@@ -68,7 +68,7 @@ Available assertions (see [lib.sh](lib.sh)) :
 Environment helpers :
 
 - `in_container` — true inside any devcontainer.
-- `repo_root` — walks up to find `.git` / `templates/v2` marker.
+- `repo_root` — walks up to find the `.git` marker.
 
 ## Pre-ship checklist
 

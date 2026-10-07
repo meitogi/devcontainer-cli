@@ -106,10 +106,8 @@ jobs:
 
       # Builds dist/ (gitignored, so a fresh clone has none) and runs the suite.
       # prepublishOnly runs it a second time — that duplication is deliberate,
-      # see RELEASING.md. Expect the node:test trailer to show 3 skipped — the
-      # template-drift suite, which has no monorepo template to compare against
-      # here. shim.test.ts used to be guarded the same way; it now renders the
-      # package's own template, so it runs everywhere.
+      # see RELEASING.md. Expect the node:test trailer to show 0 skipped: the
+      # package's own template is the only copy, nothing waits on the monorepo.
       - name: build and test
         run: npm test
 

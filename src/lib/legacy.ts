@@ -101,10 +101,9 @@ export interface LayoutEntry {
 }
 
 /**
- * install.sh's top-level entries (templates/v2/), plus the runtime debris a
- * live tree grows. Anything not listed is `yours`. The test suite checks the
- * template side of this table against templates/v2/ when that tree is present,
- * and the three real trees' entry lists against the whole of it.
+ * install.sh's top-level entries (the v2 template, retired from the monorepo on
+ * 2026-10-07), plus the runtime debris a live tree grows. Anything not listed is
+ * `yours`. The test suite checks the three real trees' entry lists against it.
  */
 export const LEGACY_LAYOUT: Readonly<Record<string, LayoutEntry>> = {
 	// --- the switch: three hand-edited files v3 reads in place ---

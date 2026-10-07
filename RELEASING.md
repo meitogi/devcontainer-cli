@@ -175,15 +175,6 @@ guarantee for about a minute.
   expansion to Node's own glob support, which only exists from Node 22 — so the
   suite would silently stop running for anyone on the Node 18 that
   `engines.node` advertises.
-- **`test/template-drift.test.ts` skips here, and should.** It compares the
-  shipped template against the copy in the monorepo this package was extracted
-  from; outside that tree the path does not resolve and all three tests report
-  `skip`. Keep the `existsSync` guard rather than deleting the file — it wakes
-  up on its own if the two trees are ever side by side again, which is exactly
-  when drift happens. The third case guards `initialize.sh`, which cannot be
-  byte-compared because this copy carries the `{{DEVC_PACKAGE}}` placeholders
-  the monorepo copy spells out; it compares everything but the `exec` line,
-  which is where the 80 lines of node detection live.
 - **`test/shim.test.ts` no longer has that guard, deliberately.** The launcher
   ships in this package now, so the suite renders the real template through
   `buildPlan`/`applyPlan` and tests the scaffolded artefact. It runs everywhere,

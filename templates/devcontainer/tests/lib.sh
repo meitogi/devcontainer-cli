@@ -191,11 +191,11 @@ in_container() {
 }
 
 repo_root() {
-  # Walk up from this lib.sh until we find a marker (e.g., .git or templates/v2).
+  # Walk up from this lib.sh until we find the .git marker.
   local d
   d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   while [ "$d" != "/" ]; do
-    if [ -d "$d/.git" ] || [ -d "$d/templates/v2" ]; then
+    if [ -d "$d/.git" ]; then
       printf '%s' "$d"
       return 0
     fi
