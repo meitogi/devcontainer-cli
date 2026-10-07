@@ -92,8 +92,15 @@ the running dnsmasq / ipset / mitmproxy. The runtime config in
 - Running `python3 compile-policy.py` as `node` either fails on
   `/var/run/` writes or recompiles into a file no daemon re-reads —
   it's a false signal.
-- The only real verification path is **rebuilding the devcontainer**.
-- Never claim « tested by recompile » without a rebuild.
+- The local layer (`domains.local.txt`, `policy.local.d/`) can be
+  hot-reloaded in `basic` and `strict` : `reload-firewall --dry-run`
+  shows the diff, then the user applies it from the host with
+  `wtf firewall reload`. Never apply it yourself — see
+  `/opt/devcontainer/base/knowledge/firewall-reload-local.md`.
+- Committed sources (`domains.txt`, `domains.d/`, `policy.d/`) are read
+  from the baked copy : the only real verification path for those is
+  **rebuilding the devcontainer**.
+- Never claim « tested by recompile » without a reload or a rebuild.
 
 See `/opt/devcontainer/base/knowledge/firewall.md` for the init flow and
 compile-policy modes. A v3 tree carries no `.devcontainer/knowledge/` — the
