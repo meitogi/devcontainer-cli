@@ -7,27 +7,15 @@ Maintainer documentation. If you only consume the package, you want
 
 0. Two checks on what is about to ship.
 
-   - **Re-copy `notify/` from the development tree.** The tarball's copy is the
-     one every project runs, and this repo is not where the daemon is edited —
-     the dogfood's `.devcontainer/notify/` is, which is why its `.env` pins
-     `NOTIFY_DAEMON_DIR=notify`. Skipping this ships yesterday's daemon to
-     everyone, which is the exact failure the vendoring removed: before it, a
-     project ran a copy 20 days stale and nothing could say so.
+   - **`notify/` is edited here.** The dogfood's `.devcontainer/notify/` used
+     to be the development tree, re-copied over this one before each release;
+     it went away when the dogfood adopted v3, and this repository is now the
+     only copy of the daemon. Do not re-copy from anywhere. Run its own tests,
+     which `npm test` does not reach:
      ```sh
-     rm -rf notify
-     rsync -a --exclude='.DS_Store' \
-       ../../.devcontainer/notify/{index.js,package.json,lib,vendor} notify/
-     git status --short notify/
+     for t in notify/tests/*.test.js; do node "$t" >/dev/null 2>&1 || echo "FAIL $t"; done
      ```
-     The `rm -rf` is the point, not carelessness: `rsync --delete` prunes inside
-     the directories it recurses into but leaves anything stranded at the
-     destination root, so a file the daemon dropped would ship forever. Nothing
-     here is authored — the four entries above rebuild it whole.
-
-     No output from `git status` is a valid answer: it means the daemon did not
-     change since the last release. Four entries and nothing else — `tools/`
-     resolves `__dirname/../../logs/` and would break from inside the npx cache,
-     and `queue*/` is ~15 MB of runtime state.
+     No output means every suite passed.
    - **Check `templates/` for rollout jargon.** Internal phase/session labels
      ("Phase 3 A3", "Session 4") leak in from time to time and read as nonsense
      to a project that never saw the rollout:
