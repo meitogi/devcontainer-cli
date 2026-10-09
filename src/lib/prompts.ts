@@ -46,7 +46,16 @@ export function readlineAsk(
 			held.readline ??= createInterface({ input, output })
 			return held.readline.question(question)
 		},
-		askSecret: (question) => askMasked(input, output, question),
+		askSecret: (question) => {
+			// The shared interface reads the same stream: left open, it echoes
+			// every keystroke of the secret in clear, and once the masked
+			// interface closes (pausing the stream) nothing resumes it — the
+			// next question waits on a dead stdin and the process exits 13.
+			// The next `ask` creates a fresh one, which resumes the stream.
+			held.readline?.close()
+			held.readline = null
+			return askMasked(input, output, question)
+		},
 		close: () => held.readline?.close(),
 	}
 }
