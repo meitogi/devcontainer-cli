@@ -81,6 +81,13 @@ guess the stack, then asks — saying what each answer is used for:
    is listed with the projects that mount it, most shared first; or a new
    shared one, or a private per-project one.
 5. **Claude Code line** — which published `<base>-cc<claude-code>` image.
+6. **Extension patchers** — the access token first (a GitHub fine-grained PAT,
+   Contents read-only), then the repo is read from what the token sees: one
+   repo is taken as is, a few are listed (an `ext-patch` name is the default),
+   more than 20 or no answer from GitHub fall back to typing `owner/name`.
+   An empty token still takes a typed public repo; empty twice skips the
+   step. The answers can be remembered in `~/.config/devc/ext-patches.env`
+   (mode 600), and later projects get a single reuse question.
 
 Then it writes the thin project layer (~45 files: `devcontainer.json`,
 `Dockerfile`, `docker-compose.yml`, `.env`, `initialize.sh`, the firewall
@@ -101,10 +108,19 @@ inherited from `ghcr.io/meitogi/devcontainer-sandbox` at runtime.
 ```
 devc init [dir] [--yes] [--project-id <slug>] [--display-name <name>]
           [--creds-volume <name|none>] [--stack <id>] [--cc <x.y.z>] [--base <x.y.z>]
+          [--ext-patches-repo <owner/name>] [--ext-patches-ref <ref>]
           [--no-install] [--dry-run]
 ```
 
 `--yes` takes every default and is required when stdin is not a terminal.
+Non-interactively, the extension patchers are opted into with
+`EXT_PATCHES_TOKEN` in the environment — never a flag, it would land in shell
+history. Alone, it uses the one repo the token reads, and refuses with the
+list when it reads several; `--ext-patches-repo` names the repo instead:
+
+```sh
+EXT_PATCHES_TOKEN=github_pat_… npx @meitogi/devcontainer-cli init --yes
+```
 
 The base image pinned is the newest published on the chosen Claude Code line,
 read from ghcr.io at scaffold time and written as an explicit `BASE_IMAGE` in

@@ -15,7 +15,12 @@ import { init, type InitOptions } from '../src/commands/init.js'
 import { readEnvFile } from '../src/lib/env-file.js'
 import { extPatchesConfigPath, readExtPatchesConfig, writeExtPatchesConfig } from '../src/lib/machine-config.js'
 import { maskedLine } from '../src/lib/prompts.js'
+import type { RepoListing } from '../src/lib/github.js'
 import type { HostProbe } from '../src/lib/platform.js'
+
+// A devcontainer exports EXT_PATCHES_TOKEN, and alone it now opts `--yes` into
+// the patchers: every test starts without it and sets it where it means to.
+delete process.env['EXT_PATCHES_TOKEN']
 
 const LINUX_PROBE: HostProbe = { platform: 'linux', env: {}, procVersion: 'Linux version 6.12.76-linuxkit' }
 
@@ -78,6 +83,8 @@ async function runInit(dir: string, overrides: Partial<InitOptions> = {}) {
 		discover: () => [],
 		// The registry is never reached from a test: the template's pin, as offline.
 		resolveBase: async () => ({ version: DEFAULT_BASE_VERSION, source: 'default', reason: 'test' }),
+		// Nor is api.github.com: a token's repos come from the test, or not at all.
+		listRepos: async () => ({ error: 'test: no GitHub' }),
 		installer: async () => 0,
 		...overrides,
 	})
@@ -137,18 +144,36 @@ test('a saved but empty repo reads back as null', () => {
 
 // === devc init wizard flow ==================================================
 
-test('interactive: leaving the repo empty skips ref, token and the remember prompt', async () => {
+/** A fake GitHub: the token it was asked about, and the listing it answers. */
+function github(listing: RepoListing): ((token: string) => Promise<RepoListing>) & { tokens: string[] } {
+	const tokens: string[] = []
+	const listRepos = async (token: string): Promise<RepoListing> => {
+		tokens.push(token)
+		return listing
+	}
+	return Object.assign(listRepos, { tokens })
+}
+
+const ONE_VOLUME = (): { name: string; projects: string[] }[] => [{ name: 'claude-creds-old', projects: [] }]
+
+function questionsOf(ask: { asked: string[] }): string[] {
+	return ask.asked.map((question) => question.trim().split(' [')[0] ?? '')
+}
+
+test('interactive: an empty token then an empty repo skips ref and the remember prompt, GitHub never asked', async () => {
 	const home = fakeHome()
 	const { dir, cleanup } = scratch()
 	try {
-		const ask = answering('', '', '', '', '', '', '')
-		const run = await runInit(dir, { yes: false, input: TTY(), ask, discover: () => [] })
+		const listRepos = github({ repos: ['acme/patches'] })
+		const ask = answering('', '', '', '', '', '', '', '', '')
+		const run = await runInit(dir, { yes: false, input: TTY(), ask, discover: () => [], listRepos })
 		assert.equal(run.code, 0, run.err)
-		const questions = ask.asked.map((question) => question.trim().split(' [')[0] ?? '')
+		const questions = questionsOf(ask)
+		assert.ok(questions.includes('Extension patchers access token (empty to skip, ctrl-R reveals):'))
 		assert.ok(questions.includes('Extension patchers repository (owner/name, empty to skip)'))
 		assert.ok(!questions.some((question) => question.startsWith('Ref')))
-		assert.ok(!questions.some((question) => question.startsWith('Access token')))
 		assert.ok(!questions.some((question) => question.startsWith('Remember')))
+		assert.deepEqual(listRepos.tokens, [])
 		assert.equal(readExtPatchesConfig(), null)
 		assert.equal(readEnvFile(join(dir, '.devcontainer', '.env'))['EXT_PATCHES_REPO'], undefined)
 	} finally {
@@ -157,29 +182,117 @@ test('interactive: leaving the repo empty skips ref, token and the remember prom
 	}
 })
 
-test('interactive: a filled-in repo asks ref and token, writes .env, and remembers on confirm', async () => {
+test('interactive: an empty token still takes a typed public repo', async () => {
 	const home = fakeHome()
 	const { dir, cleanup } = scratch()
 	try {
-		// discover() returns one existing volume so the default creds-volume
-		// choice lands on it, not on "New shared volume…" (which would consume
-		// an extra answer slot for its own name sub-prompt).
-		// stack, id, name, creds volume, cc, repo, ref (Enter=default), token, remember=y, proceed=y
-		const ask = answering('', '', '', '', '', 'acme/patches', '', 'tok-123', 'y', 'y')
-		const run = await runInit(dir, {
-			yes: false,
-			input: TTY(),
-			ask,
-			discover: () => [{ name: 'claude-creds-old', projects: [] }],
-		})
+		// stack, id, name, creds volume, cc, token (empty), repo, ref (Enter=auto), remember=n, proceed=y
+		const ask = answering('', '', '', '', '', '', 'acme/patches', '', 'n', 'y')
+		const run = await runInit(dir, { yes: false, input: TTY(), ask, discover: ONE_VOLUME })
 		assert.equal(run.code, 0, run.err)
 		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
 		assert.equal(env['EXT_PATCHES_REPO'], 'acme/patches')
+		assert.equal(env['EXT_PATCHES_TOKEN'], '')
+		assert.equal(readExtPatchesConfig(), null)
+	} finally {
+		cleanup()
+		home.cleanup()
+	}
+})
+
+test('interactive: a token that reads one repo takes it without asking, writes .env, and remembers on confirm', async () => {
+	const home = fakeHome()
+	const { dir, cleanup } = scratch()
+	try {
+		const listRepos = github({ repos: ['acme/claude-ext-patchs'] })
+		// stack, id, name, creds volume, cc, token, ref (Enter=auto), remember=y, proceed=y
+		const ask = answering('', '', '', '', '', 'tok-123', '', 'y', 'y')
+		const run = await runInit(dir, { yes: false, input: TTY(), ask, discover: ONE_VOLUME, listRepos })
+		assert.equal(run.code, 0, run.err)
+		assert.deepEqual(listRepos.tokens, ['tok-123'])
+		assert.ok(!questionsOf(ask).some((question) => question.startsWith('Extension patchers repository')))
+		assert.match(run.out, /Token reads one repo: acme\/claude-ext-patchs/)
+		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
+		assert.equal(env['EXT_PATCHES_REPO'], 'acme/claude-ext-patchs')
 		assert.equal(env['EXT_PATCHES_REF'], undefined, 'Enter on the ref question leaves it auto: the line stays commented')
 		assert.equal(env['EXT_PATCHES_TOKEN'], 'tok-123')
-		const saved = readExtPatchesConfig()
-		assert.equal(saved?.repo, 'acme/patches')
-		assert.equal(saved?.token, 'tok-123')
+		assert.deepEqual(readExtPatchesConfig(), { repo: 'acme/claude-ext-patchs', ref: '', token: 'tok-123' })
+	} finally {
+		cleanup()
+		home.cleanup()
+	}
+})
+
+test('interactive: a token that reads a few repos lists them, the ext-patch one by default', async () => {
+	const home = fakeHome()
+	const { dir, cleanup } = scratch()
+	try {
+		const listRepos = github({ repos: ['acme/app', 'acme/claude-ext-patchs', 'acme/web'] })
+		// stack, id, name, creds volume, cc, token, repo choice (Enter=default), ref, remember=n, proceed=y
+		const ask = answering('', '', '', '', '', 'tok-123', '', '', 'n', 'y')
+		const run = await runInit(dir, { yes: false, input: TTY(), ask, discover: ONE_VOLUME, listRepos })
+		assert.equal(run.code, 0, run.err)
+		assert.ok(questionsOf(ask).includes('Extension patchers repository'))
+		assert.match(run.out, /2\. acme\/claude-ext-patchs\s+← default/)
+		assert.match(run.out, /4\. Other \(type owner\/name\)/)
+		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
+		assert.equal(env['EXT_PATCHES_REPO'], 'acme/claude-ext-patchs')
+		assert.equal(env['EXT_PATCHES_TOKEN'], 'tok-123')
+	} finally {
+		cleanup()
+		home.cleanup()
+	}
+})
+
+test('interactive: "Other" in the list asks for the repo by name', async () => {
+	const home = fakeHome()
+	const { dir, cleanup } = scratch()
+	try {
+		const listRepos = github({ repos: ['acme/app', 'acme/web'] })
+		// …, token, choice 3 = Other, typed repo, ref, remember=n, proceed=y
+		const ask = answering('', '', '', '', '', 'tok-123', '3', 'other/patches', '', 'n', 'y')
+		const run = await runInit(dir, { yes: false, input: TTY(), ask, discover: ONE_VOLUME, listRepos })
+		assert.equal(run.code, 0, run.err)
+		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
+		assert.equal(env['EXT_PATCHES_REPO'], 'other/patches')
+		assert.equal(env['EXT_PATCHES_TOKEN'], 'tok-123')
+	} finally {
+		cleanup()
+		home.cleanup()
+	}
+})
+
+test('interactive: past 20 repos the best candidate is the typed default', async () => {
+	const home = fakeHome()
+	const { dir, cleanup } = scratch()
+	try {
+		const repos: string[] = []
+		for (let i = 0; i < 30; i++) repos.push(`acme/repo-${i}`)
+		repos[17] = 'acme/vscode-ext-patches'
+		const ask = answering('', '', '', '', '', 'tok-123', '', '', 'n', 'y')
+		const run = await runInit(dir, { yes: false, input: TTY(), ask, discover: ONE_VOLUME, listRepos: github({ repos }) })
+		assert.equal(run.code, 0, run.err)
+		assert.match(run.out, /30 repos visible/)
+		assert.ok(ask.asked.some((question) => question.includes('Extension patchers repository (owner/name, empty to skip) [acme/vscode-ext-patches]')))
+		assert.equal(readEnvFile(join(dir, '.devcontainer', '.env'))['EXT_PATCHES_REPO'], 'acme/vscode-ext-patches')
+	} finally {
+		cleanup()
+		home.cleanup()
+	}
+})
+
+test('interactive: GitHub refusing the token says why and falls back to typing the repo, token kept', async () => {
+	const home = fakeHome()
+	const { dir, cleanup } = scratch()
+	try {
+		const listRepos = github({ error: 'GitHub refused this token (401)' })
+		const ask = answering('', '', '', '', '', 'tok-123', 'acme/patches', '', 'n', 'y')
+		const run = await runInit(dir, { yes: false, input: TTY(), ask, discover: ONE_VOLUME, listRepos })
+		assert.equal(run.code, 0, run.err)
+		assert.match(run.out, /✗ GitHub refused this token \(401\)/)
+		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
+		assert.equal(env['EXT_PATCHES_REPO'], 'acme/patches')
+		assert.equal(env['EXT_PATCHES_TOKEN'], 'tok-123')
 	} finally {
 		cleanup()
 		home.cleanup()
@@ -244,25 +357,74 @@ test('non-interactive with --ext-patches-repo/--ext-patches-ref and EXT_PATCHES_
 	}
 })
 
-test('an invalid repo shape is rejected and re-asked', async () => {
+/** EXT_PATCHES_TOKEN set for the duration of `body`, restored to unset after. */
+async function withEnvToken<T>(token: string, body: () => Promise<T>): Promise<T> {
+	process.env['EXT_PATCHES_TOKEN'] = token
+	try {
+		return await body()
+	} finally {
+		delete process.env['EXT_PATCHES_TOKEN']
+	}
+}
+
+test('non-interactive with EXT_PATCHES_TOKEN alone, reading one repo: written with that repo', async () => {
 	const home = fakeHome()
 	const { dir, cleanup } = scratch()
 	try {
-		// discover() returns one existing volume so the default creds-volume
-		// choice lands on it rather than "New shared volume…", which would
-		// otherwise consume an extra answer slot for its own name sub-prompt.
-		const ask = answering('', '', '', '', '', 'not-a-repo', 'acme/patches', '', '', 'n', 'n')
-		const run = await runInit(dir, {
-			yes: false,
-			input: TTY(),
-			ask,
-			discover: () => [{ name: 'claude-creds-old', projects: [] }],
-		})
+		const listRepos = github({ repos: ['acme/claude-ext-patchs'] })
+		const run = await withEnvToken('env-tok', () => runInit(dir, { listRepos }))
 		assert.equal(run.code, 0, run.err)
-		assert.match(run.out, /expected owner\/name/)
+		assert.deepEqual(listRepos.tokens, ['env-tok'])
+		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
+		assert.equal(env['EXT_PATCHES_REPO'], 'acme/claude-ext-patchs')
+		assert.equal(env['EXT_PATCHES_TOKEN'], 'env-tok')
+		assert.equal(readExtPatchesConfig(), null)
 	} finally {
 		cleanup()
 		home.cleanup()
 	}
 })
 
+test('non-interactive with EXT_PATCHES_TOKEN alone, reading several repos: exit 2, nothing written', async () => {
+	const home = fakeHome()
+	const { dir, cleanup } = scratch()
+	try {
+		const run = await withEnvToken('env-tok', () => runInit(dir, { listRepos: github({ repos: ['acme/a', 'acme/b'] }) }))
+		assert.equal(run.code, 2)
+		assert.match(run.err, /reads 2 repos \(acme\/a, acme\/b\) — pass --ext-patches-repo/)
+		assert.equal(existsSync(join(dir, '.devcontainer')), false)
+	} finally {
+		cleanup()
+		home.cleanup()
+	}
+})
+
+test('non-interactive with EXT_PATCHES_TOKEN alone, GitHub unreachable: exit 2 with the reason', async () => {
+	const home = fakeHome()
+	const { dir, cleanup } = scratch()
+	try {
+		const run = await withEnvToken('env-tok', () => runInit(dir, { listRepos: github({ error: 'api.github.com did not answer in time' }) }))
+		assert.equal(run.code, 2)
+		assert.match(run.err, /could not be listed \(api\.github\.com did not answer in time\)/)
+		assert.equal(existsSync(join(dir, '.devcontainer')), false)
+	} finally {
+		cleanup()
+		home.cleanup()
+	}
+})
+
+test('an invalid repo shape is rejected and re-asked', async () => {
+	const home = fakeHome()
+	const { dir, cleanup } = scratch()
+	try {
+		// …, token (empty), repo (bad, then good), ref, remember=n, proceed=n
+		const ask = answering('', '', '', '', '', '', 'not-a-repo', 'acme/patches', '', 'n', 'n')
+		const run = await runInit(dir, { yes: false, input: TTY(), ask, discover: ONE_VOLUME })
+		assert.equal(run.code, 0, run.err)
+		assert.match(run.out, /expected owner\/name/)
+		assert.match(run.out, /Ext-patches   : acme\/patches @ auto/)
+	} finally {
+		cleanup()
+		home.cleanup()
+	}
+})

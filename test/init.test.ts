@@ -15,6 +15,10 @@ import { readDevcontainerJson, readStitchuCustomizations } from '../src/lib/devc
 import { readEnvFile } from '../src/lib/env-file.js'
 import type { HostProbe } from '../src/lib/platform.js'
 
+// A devcontainer exports EXT_PATCHES_TOKEN, and alone it now opts `--yes` into
+// the patchers: every test starts without it and sets it where it means to.
+delete process.env['EXT_PATCHES_TOKEN']
+
 const LINUX_PROBE: HostProbe = { platform: 'linux', env: {}, procVersion: 'Linux version 6.12.76-linuxkit' }
 
 function scratch(name = 'demo-app'): { dir: string; cleanup: () => void } {
@@ -70,6 +74,8 @@ async function runInit(dir: string, overrides: Partial<InitOptions> = {}): Promi
 		discover: () => [],
 		// The registry is never reached from a test: the template's pin, as offline.
 		resolveBase: async () => ({ version: DEFAULT_BASE_VERSION, source: 'default', reason: 'test' }),
+		// Nor is api.github.com: a token's repos come from the test, or not at all.
+		listRepos: async () => ({ error: 'test: no GitHub' }),
 		installer: async (_projectDir, argv) => {
 			installs.push([...argv])
 			return 0
@@ -392,7 +398,7 @@ test('--no-install leaves the install as the first next step', async () => {
 test('interactive: the questions come in order, the most shared volume is the default, Enter takes defaults', async () => {
 	const { dir, cleanup } = scratch()
 	try {
-		const ask = answering('', '', '', '', '', '', '', '')
+		const ask = answering('', '', '', '', '', '', '', '', '')
 		const run = await runInit(dir, {
 			yes: false,
 			input: TTY(),
@@ -410,6 +416,7 @@ test('interactive: the questions come in order, the most shared volume is the de
 			'Display name',
 			'Claude credentials volume',
 			'Claude Code line',
+			'Extension patchers access token (empty to skip, ctrl-R reveals):',
 			'Extension patchers repository (owner/name, empty to skip)',
 			'Proceed?',
 			'Install @meitogi/devcontainer-cli locally now (npm install)?',
@@ -428,8 +435,8 @@ test('interactive: an invalid slug is re-asked, a new volume is named, and "n" a
 	const { dir, cleanup } = scratch()
 	try {
 		// stack (Enter), id (bad, then good), name (Enter), volume: option 2 = new…, then its name,
-		// cc (Enter), ext-patches repo (Enter = skip), proceed: n
-		const ask = answering('', 'Bad Slug', 'good-slug', '', '2', 'claude-creds-team', '', '', 'n')
+		// cc (Enter), ext-patches token and repo (Enter = skip), proceed: n
+		const ask = answering('', 'Bad Slug', 'good-slug', '', '2', 'claude-creds-team', '', '', '', 'n')
 		const run = await runInit(dir, {
 			yes: false,
 			input: TTY(),

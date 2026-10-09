@@ -26,6 +26,7 @@ import {
 	type CredsVolume,
 } from '../lib/docker.js'
 import { readEnvFile, uncommentEnvVar, unsetEnvVar } from '../lib/env-file.js'
+import { listTokenRepos, pickDefaultRepo, type RepoListing } from '../lib/github.js'
 import { readExtPatchesConfig, writeExtPatchesConfig } from '../lib/machine-config.js'
 import {
 	CLI_PACKAGE_NAME,
@@ -70,6 +71,8 @@ export interface InitOptions {
 	/** Non-interactive ext-patches opt-in; token comes from EXT_PATCHES_TOKEN, never a flag. */
 	extPatchesRepo?: string | undefined
 	extPatchesRef?: string | undefined
+	/** The repos an ext-patches token reads; tests inject one so the wizard never reaches api.github.com. */
+	listRepos?: ((token: string) => Promise<RepoListing>) | undefined
 	/** Run the package manager after writing package.json (default true; `--no-install`). */
 	install?: boolean | undefined
 	/** Stream whose TTY-ness decides whether prompting is possible. */
@@ -113,15 +116,17 @@ Options:
   --stack <id>               ${STACKS.map((stack) => stack.id).join(' | ')}
   --cc <x.y.z>               Claude Code line to pin (published: ${PUBLISHED_CLAUDE_CODE_VERSIONS.join(', ')})
   --base <x.y.z>             Base image version to pin (default: the newest published on that line, read from ghcr.io; offline: ${DEFAULT_BASE_VERSION})
-  --ext-patches-repo <owner/name>  Extension patchers repo (non-interactive opt-in)
+  --ext-patches-repo <owner/name>  Extension patchers repo (non-interactive opt-in;
+                             optional when EXT_PATCHES_TOKEN reads one repo)
   --ext-patches-ref <ref>    Ref for the above (default: empty = auto)
   --no-install               Write package.json but do not run the package manager
   --dry-run                  Show what would be written, write nothing
   -h, --help                 Show this help
 
 Environment:
-  EXT_PATCHES_TOKEN          Token for --ext-patches-repo (never a flag — it
-                             would land in shell history)
+  EXT_PATCHES_TOKEN          Token for the extension patchers (never a flag — it
+                             would land in shell history). Alone, it opts in
+                             with the one repo it reads
 
 An existing .devcontainer/ is never overwritten: a tree this CLI made gets a
 per-file report and only missing files added; any other tree is refused.
@@ -395,15 +400,20 @@ function describeBase(base: BaseResolution): string {
 }
 
 const REPO_PATTERN = /^[\w.-]+\/[\w.-]+$/
+/** Past this, a numbered list is noise (a classic PAT sees the whole account): type it instead. */
+const MAX_LISTED_REPOS = 20
 
 /**
- * Repo/ref/token for the wizard's extension-patcher prompts, with
- * machine-level reuse: the first project on a machine asks all three and
- * offers to remember them at `~/.config/devc/ext-patches.env`; later
- * projects get one reuse confirmation, with `ref` always recomputed for
- * this project rather than trusted from the stored value. Non-interactive
- * only via explicit flags — never prompted, never touches the machine
- * config.
+ * Token/repo/ref for the wizard's extension-patcher prompts, token first:
+ * the repo is read from what the token can see — one repo is taken as is,
+ * a few are listed, none (or no answer from GitHub) falls back to typing
+ * it. An empty token still allows a public repo, typed. Machine-level
+ * reuse: the first project on a machine offers to remember all three at
+ * `~/.config/devc/ext-patches.env`; later projects get one reuse
+ * confirmation, with `ref` always recomputed for this project rather than
+ * trusted from the stored value. Non-interactive: `--ext-patches-repo`, or
+ * EXT_PATCHES_TOKEN alone when it reads exactly one repo — never prompted,
+ * never touches the machine config.
  */
 async function collectExtPatches(wizard: WizardContext, claudeCodeVersion: string): Promise<ExtPatchesAnswer | null> {
 	const { options, context, interactive, say } = wizard
@@ -411,14 +421,23 @@ async function collectExtPatches(wizard: WizardContext, claudeCodeVersion: strin
 	// version the container runs (cc<version>-r<n>). A pin is the exception.
 	const defaultRef = ''
 	void claudeCodeVersion
+	const listRepos = options.listRepos ?? listTokenRepos
 
 	if (!interactive) {
-		if (options.extPatchesRepo === undefined) return null
-		return {
-			repo: options.extPatchesRepo,
-			ref: options.extPatchesRef ?? defaultRef,
-			token: process.env['EXT_PATCHES_TOKEN'] ?? '',
+		const token = process.env['EXT_PATCHES_TOKEN'] ?? ''
+		const ref = options.extPatchesRef ?? defaultRef
+		if (options.extPatchesRepo !== undefined) return { repo: options.extPatchesRepo, ref, token }
+		if (token.length === 0) return null
+		const listing = await listRepos(token)
+		if ('error' in listing) {
+			throw new PromptAbandoned(`EXT_PATCHES_TOKEN is set but its repos could not be listed (${listing.error}) — pass --ext-patches-repo <owner/name>`)
 		}
+		const repos = listing.repos
+		if (repos.length !== 1) {
+			const seen = repos.length === 0 ? 'no repo' : `${repos.length} repos (${repos.join(', ')})`
+			throw new PromptAbandoned(`EXT_PATCHES_TOKEN reads ${seen} — pass --ext-patches-repo <owner/name>`)
+		}
+		return { repo: repos[0] as string, ref, token }
 	}
 
 	const machine = readExtPatchesConfig()
@@ -428,15 +447,15 @@ async function collectExtPatches(wizard: WizardContext, claudeCodeVersion: strin
 	}
 
 	say()
-	const repo = await text(context, {
-		question: 'Extension patchers repository (owner/name, empty to skip)',
+	const token = await secret(context, {
+		question: 'Extension patchers access token (empty to skip, ctrl-R reveals)',
 		explain: [
-			'A git repo of VS Code extension patches applied at container start.',
-			'Leave empty to skip — nothing else is asked or written for this.',
+			'A GitHub PAT (fine-grained, Contents read-only) on a repo of VS Code extension patches applied at container start.',
+			'The repo is read from the token next. Empty: type a public repo instead, or skip.',
+			"Lands in this project's .env — masking only guards the terminal echo.",
 		],
-		defaultValue: '',
-		validate: (value) => (value.length === 0 || REPO_PATTERN.test(value) ? null : 'expected owner/name'),
 	})
+	const repo = token.length === 0 ? await askRepo(context, '') : await repoFromToken(wizard, token, listRepos)
 	if (repo.length === 0) return null
 
 	const ref = await text(context, {
@@ -445,16 +464,52 @@ async function collectExtPatches(wizard: WizardContext, claudeCodeVersion: strin
 		defaultValue: defaultRef,
 	})
 
-	const token = await secret(context, {
-		question: 'Access token (empty for none, ctrl-R reveals)',
-		explain: ["Lands in this project's .env either way — masking only guards the terminal echo."],
-	})
-
 	if (await confirm(context, { question: 'Remember these for your next project?', defaultYes: true })) {
 		writeExtPatchesConfig({ repo, ref, token })
 	}
 
 	return { repo, ref, token }
+}
+
+/** The repo `token` reads: taken when alone, chosen among a few, typed otherwise. Empty = skip. */
+async function repoFromToken(wizard: WizardContext, token: string, listRepos: (token: string) => Promise<RepoListing>): Promise<string> {
+	const { context, say } = wizard
+	say('  Looking up the repos this token can read…')
+	const listing = await listRepos(token)
+	if ('error' in listing) {
+		say(`  ✗ ${listing.error}`)
+		return askRepo(context, '')
+	}
+	const repos = listing.repos
+	const count = repos.length
+	if (count === 0) {
+		say('  ✗ This token reads no repo.')
+		return askRepo(context, '')
+	}
+	if (count === 1) {
+		const only = repos[0] as string
+		say(`  ✓ Token reads one repo: ${only}`)
+		return only
+	}
+	const best = pickDefaultRepo(repos)
+	if (count > MAX_LISTED_REPOS) {
+		say(`  ${count === 100 ? '100+' : count} repos visible — type the one holding the patchers.`)
+		return askRepo(context, repos[best] as string)
+	}
+	const picked = await choose(context, {
+		question: 'Extension patchers repository',
+		options: [...repos.map((label) => ({ label })), { label: 'Other (type owner/name)' }],
+		defaultIndex: best,
+	})
+	return picked === count ? askRepo(context, '') : (repos[picked] as string)
+}
+
+function askRepo(context: PromptContext, defaultValue: string): Promise<string> {
+	return text(context, {
+		question: 'Extension patchers repository (owner/name, empty to skip)',
+		defaultValue,
+		validate: (value) => (value.length === 0 || REPO_PATTERN.test(value) ? null : 'expected owner/name'),
+	})
 }
 
 /**
