@@ -385,28 +385,30 @@ test('non-interactive with EXT_PATCHES_TOKEN alone, reading one repo: written wi
 	}
 })
 
-test('non-interactive with EXT_PATCHES_TOKEN alone, reading several repos: exit 2, nothing written', async () => {
+test('non-interactive with EXT_PATCHES_TOKEN alone, reading several repos: scaffolded without patchers, the list on stderr', async () => {
 	const home = fakeHome()
 	const { dir, cleanup } = scratch()
 	try {
 		const run = await withEnvToken('env-tok', () => runInit(dir, { listRepos: github({ repos: ['acme/a', 'acme/b'] }) }))
-		assert.equal(run.code, 2)
-		assert.match(run.err, /reads 2 repos \(acme\/a, acme\/b\) — pass --ext-patches-repo/)
-		assert.equal(existsSync(join(dir, '.devcontainer')), false)
+		assert.equal(run.code, 0, run.err)
+		assert.match(run.err, /extension patchers skipped — EXT_PATCHES_TOKEN is set but it reads 2 repos \(acme\/a, acme\/b\); pass --ext-patches-repo/)
+		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
+		assert.equal(env['EXT_PATCHES_REPO'], undefined)
+		assert.equal(env['EXT_PATCHES_TOKEN'], undefined)
 	} finally {
 		cleanup()
 		home.cleanup()
 	}
 })
 
-test('non-interactive with EXT_PATCHES_TOKEN alone, GitHub unreachable: exit 2 with the reason', async () => {
+test('non-interactive with EXT_PATCHES_TOKEN alone, GitHub unreachable: scaffolded without patchers, the reason on stderr', async () => {
 	const home = fakeHome()
 	const { dir, cleanup } = scratch()
 	try {
 		const run = await withEnvToken('env-tok', () => runInit(dir, { listRepos: github({ error: 'api.github.com did not answer in time' }) }))
-		assert.equal(run.code, 2)
+		assert.equal(run.code, 0, run.err)
 		assert.match(run.err, /could not be listed \(api\.github\.com did not answer in time\)/)
-		assert.equal(existsSync(join(dir, '.devcontainer')), false)
+		assert.equal(readEnvFile(join(dir, '.devcontainer', '.env'))['EXT_PATCHES_REPO'], undefined)
 	} finally {
 		cleanup()
 		home.cleanup()

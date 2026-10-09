@@ -126,7 +126,7 @@ Options:
 Environment:
   EXT_PATCHES_TOKEN          Token for the extension patchers (never a flag — it
                              would land in shell history). Alone, it opts in
-                             with the one repo it reads
+                             with the one repo it reads, else the step is skipped
 
 An existing .devcontainer/ is never overwritten: a tree this CLI made gets a
 per-file report and only missing files added; any other tree is refused.
@@ -412,8 +412,8 @@ const MAX_LISTED_REPOS = 20
  * `~/.config/devc/ext-patches.env`; later projects get one reuse
  * confirmation, with `ref` always recomputed for this project rather than
  * trusted from the stored value. Non-interactive: `--ext-patches-repo`, or
- * EXT_PATCHES_TOKEN alone when it reads exactly one repo — never prompted,
- * never touches the machine config.
+ * EXT_PATCHES_TOKEN alone when it reads exactly one repo (otherwise skipped,
+ * with the reason) — never prompted, never touches the machine config.
  */
 async function collectExtPatches(wizard: WizardContext, claudeCodeVersion: string): Promise<ExtPatchesAnswer | null> {
 	const { options, context, interactive, say } = wizard
@@ -428,16 +428,17 @@ async function collectExtPatches(wizard: WizardContext, claudeCodeVersion: strin
 		const ref = options.extPatchesRef ?? defaultRef
 		if (options.extPatchesRepo !== undefined) return { repo: options.extPatchesRepo, ref, token }
 		if (token.length === 0) return null
+		// A devcontainer exports EXT_PATCHES_TOKEN to everything it runs, so the
+		// variable alone is not a sure sign of intent: anything short of one
+		// repo skips the step with the reason rather than failing the scaffold.
 		const listing = await listRepos(token)
-		if ('error' in listing) {
-			throw new PromptAbandoned(`EXT_PATCHES_TOKEN is set but its repos could not be listed (${listing.error}) — pass --ext-patches-repo <owner/name>`)
-		}
-		const repos = listing.repos
-		if (repos.length !== 1) {
-			const seen = repos.length === 0 ? 'no repo' : `${repos.length} repos (${repos.join(', ')})`
-			throw new PromptAbandoned(`EXT_PATCHES_TOKEN reads ${seen} — pass --ext-patches-repo <owner/name>`)
-		}
-		return { repo: repos[0] as string, ref, token }
+		let skipped: string | null = null
+		if ('error' in listing) skipped = `its repos could not be listed (${listing.error})`
+		else if (listing.repos.length === 0) skipped = 'it reads no repo'
+		else if (listing.repos.length > 1) skipped = `it reads ${listing.repos.length} repos (${listing.repos.join(', ')})`
+		else return { repo: listing.repos[0] as string, ref, token }
+		wizard.err.write(`devc init: extension patchers skipped — EXT_PATCHES_TOKEN is set but ${skipped}; pass --ext-patches-repo <owner/name> to opt in\n`)
+		return null
 	}
 
 	const machine = readExtPatchesConfig()

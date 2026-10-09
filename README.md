@@ -115,8 +115,9 @@ devc init [dir] [--yes] [--project-id <slug>] [--display-name <name>]
 `--yes` takes every default and is required when stdin is not a terminal.
 Non-interactively, the extension patchers are opted into with
 `EXT_PATCHES_TOKEN` in the environment — never a flag, it would land in shell
-history. Alone, it uses the one repo the token reads, and refuses with the
-list when it reads several; `--ext-patches-repo` names the repo instead:
+history. Alone, it uses the one repo the token reads; when it reads several,
+or GitHub does not answer, the step is skipped and the reason printed.
+`--ext-patches-repo` names the repo instead:
 
 ```sh
 EXT_PATCHES_TOKEN=github_pat_… npx @meitogi/devcontainer-cli init --yes
