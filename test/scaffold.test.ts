@@ -55,6 +55,7 @@ const EXPECTED_FILES = [
 	'.devcontainer/firewall/policy.local.d.example/README.md',
 	'.devcontainer/firewall/policy.local.d.example/api.anthropic.com.warn.yaml',
 	'.devcontainer/firewall/policy.local.d.example/api.anthropic.com.yaml',
+	'.devcontainer/firewall/policy.local.d.example/api.tensorx.ai.yaml',
 	'.devcontainer/firewall/policy.local.d.example/claude-bridge.yaml',
 	'.devcontainer/firewall/policy.local.d.example/ollama.internal.yaml',
 	'.devcontainer/firewall/ports.txt',

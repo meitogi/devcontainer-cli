@@ -1,0 +1,35 @@
+# === POLICY PARITY ===
+# The /v1/messages block below mirrors the same block in
+# policy.d/api.anthropic.com.yaml : same method (POST), same max_body_kb
+# (32768), same allowed_header_patterns. Claude Code emits identical request
+# shapes against every Anthropic-compatible target, so a looser rule here would
+# be a silent regression on the day you switch to TensorX.
+
+# Purpose: advanced rules for the TensorX backend (hosted Anthropic Messages
+# compat). Reached when .env carries ANTHROPIC_BASE_URL=https://api.tensorx.ai.
+# Consumed by the mitmproxy addons. Merged on top of methods + paths declared
+# in domains.txt (uncomment its TensorX block first).
+
+endpoints:
+  - path: "^/v1/messages$"
+    methods: [POST]
+    max_body_kb: 32768              # 32 MB — parity with Anthropic cloud
+                                    # /v1/messages ceiling.
+
+# Claude Code sends the same Anthropic vendor headers (X-Api-Key,
+# X-Anthropic-*, X-Stainless-*, X-Claude-Code-Session-Id, …) regardless of
+# the destination — they're built by the Anthropic SDK before knowing which
+# base URL it'll hit. mitmproxy would 403 with `blocked_header:…` unless we
+# mirror the api.anthropic.com allowlist here.
+# Streaming SSE responses are passed through by addons/stream_sse.py.
+allowed_header_patterns:
+  - "^X-(Api|Anthropic|Service|Claude|Stainless|App|Client|Organization)-?"
+
+defaults_override:
+  enforcement_mode: warn              # DISCOVERY mode — TensorX's full path set
+                                      # is unmeasured. Unknown paths / methods /
+                                      # headers are logged to
+                                      # /var/log/mitmproxy-blocks.log instead of
+                                      # blocked. Run `firewall-blocks --follow`
+                                      # through a real session, add what it
+                                      # shows, then flip to `block`.
