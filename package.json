@@ -4,7 +4,7 @@
   "description": "Host-side control plane for the meitogi devcontainer sandbox — init wizard, initialize, update, doctor.",
   "type": "module",
   "license": "MIT",
-  "author": "Kévin ʘ‿ʘ <cmoi@kevledev.fr>",
+  "author": "meitogi",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/meitogi/devcontainer-cli.git"
