@@ -92,6 +92,7 @@ const sleepWatch     = require('./lib/sleep-watch')
 const lockfile       = require('./lib/lockfile')
 const cleanup        = require('./lib/cleanup')
 const inboundWatch   = require('./lib/inbound-watch')
+const vscodeLogsMirror = require('./lib/vscode-logs-mirror')
 const { locateQueueDir, readProjectName } = require('./lib/locate')
 const { EVENT_DELAYS_MS } = require('./lib/constants')
 
@@ -268,6 +269,11 @@ const fireDaemonStopped = (reason) => {
 // CLEANUP — purge stale *.jsonl before the watcher starts tracking offsets,
 // so suppressBackfill only sees the surviving set. Synchronous, idempotent.
 cleanup.run({ queueDir, maxAgeMs: CLEANUP_MAX_AGE_MS })
+
+// VS CODE LOGS MIRROR — opt-in (VSCODE_LOGS_MIRROR=1 in .env) : the host's
+// VS Code logs, copied every 30 s into .devcontainer/tmp/vscode-logs/host/, so
+// a crash can be read from inside the container. See lib/vscode-logs-mirror.js.
+vscodeLogsMirror.start({ projectDir })
 
 // SLEEP DETECTION — emits 'system:wake' on a Date.now() jump ; consumed
 // by docker-watch to suppress container:gone during the post-wake grace.

@@ -552,6 +552,30 @@ workflow + failure modes for these patches live in
   webview interaction). Typical session : a few MB. If it starts
   eating disk, wipe it — nothing downstream depends on old history.
 
+### VS Code logs mirror — the host's logs, readable from the container
+
+Opt-in, `VSCODE_LOGS_MIRROR=1` in `.devcontainer/.env`. A window crash, an
+extension host that dies or a Rebuild that ends on « Retry » leave their trace
+in VS Code's own logs on the **host** — `main.log`, `window<N>/renderer.log`,
+`window<N>/exthost/ms-vscode-remote.remote-containers/` for the Dev Containers
+extension — which nothing in the container can reach. The daemon is the one
+host process alive for the whole container lifetime, so
+[lib/vscode-logs-mirror.js](lib/vscode-logs-mirror.js) runs there :
+
+| | |
+|---|---|
+| Source | `~/Library/Application Support/Code/logs/` (macOS), `~/.config/Code/logs/` (Linux), `%APPDATA%\Code\logs\` (Windows ; WSL without `APPDATA` is unsupported). `Code - Insiders` too when present. |
+| Destination | `.devcontainer/tmp/vscode-logs/host/<session>/`, seen by the container through the workspace mount. |
+| What | The **2 newest** session directories per root — the current one and the previous one, where a crash that preceded this launch of VS Code left its trace. |
+| When | At daemon start, then every 30 s. A file is copied when missing or when size / whole-second mtime differ ; the copy keeps the source mtime. Files over 100 MB are skipped and named once. |
+| Retention | The 5 newest sessions in the destination. Outside `tmp/logs/`, whose boot-folder rotation would count it as a boot. |
+| Log | One `[vscode-logs]` line at start, one per session the first time it is seen, and the errors. Never a line per tick. |
+
+The container-side half — `~/.vscode-server/data/logs/`, lost at every
+Rebuild — is mirrored by the image's `post-start.d/58-vscode-logs-mirror.sh`
+into `tmp/vscode-logs/container/`, under the same key. Both sides read the key
+from the `.env` **file**, so flipping it needs a Reopen, not a Rebuild.
+
 ### Lifecycle + healthcheck
 
 [lib/lockfile.js](lib/lockfile.js) owns `queue/.daemon.pid`. One file,
@@ -984,6 +1008,7 @@ NOTIFY_CHANNELS=all                   # or CSV : toast,sound,flash,discord
 NOTIFY_SOUND=default                  # default | /abs/path.wav | off
 NOTIFY_DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/<channel_id>/<token>
 NOTIFY_CLEANUP_MAX_AGE_HOURS=24       # queue/*.jsonl TTL, parseFloat (fractions OK)
+VSCODE_LOGS_MIRROR=1                  # mirror the host's VS Code logs into tmp/vscode-logs/host/
 ```
 
 `initialize.sh` sources `.env` with `set -a` (auto-export), so the
