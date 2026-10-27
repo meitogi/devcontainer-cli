@@ -70,6 +70,24 @@ export interface DetectContext {
 	logger: Logger
 }
 
+/** The `docker ps --filter` arguments that pick this workspace's devcontainer. */
+export function devcontainerFilters(context: Pick<DetectContext, 'hostKind' | 'projectDir' | 'devcontainerDir'>): string[] {
+	// VS Code writes these labels in host-native format (C:\… on Windows).
+	// The POSIX form held here never matches on WSL / Git Bash, so translate.
+	const localFolder = toHostPath(context.hostKind, context.projectDir)
+	const configFile = toHostPath(context.hostKind, join(context.devcontainerDir, 'devcontainer.json'))
+	// The compose-project filter excludes manually-run zombies: a bare
+	// `docker run` carrying the devcontainer labels but no compose orchestration.
+	return [
+		'--filter',
+		`label=devcontainer.local_folder=${localFolder}`,
+		'--filter',
+		`label=devcontainer.config_file=${configFile}`,
+		'--filter',
+		'label=com.docker.compose.project',
+	]
+}
+
 /**
  * Distinguish "Rebuild Container" from "Reopen in Container" from first-time.
  *
@@ -93,24 +111,7 @@ export function detectRebuildSignals(context: DetectContext): RebuildSignals {
 
 	if (!hasDocker()) return { requested: false, containerId: null }
 
-	// VS Code writes these labels in host-native format (C:\… on Windows).
-	// The POSIX form held here never matches on WSL / Git Bash, so translate.
-	const localFolder = toHostPath(context.hostKind, context.projectDir)
-	const configFile = toHostPath(context.hostKind, join(context.devcontainerDir, 'devcontainer.json'))
-	// The compose-project filter excludes manually-run zombies: a bare
-	// `docker run` carrying the devcontainer labels but no compose orchestration.
-	const output = runCapture([
-		'docker',
-		'ps',
-		'-a',
-		'-q',
-		'--filter',
-		`label=devcontainer.local_folder=${localFolder}`,
-		'--filter',
-		`label=devcontainer.config_file=${configFile}`,
-		'--filter',
-		'label=com.docker.compose.project',
-	])
+	const output = runCapture(['docker', 'ps', '-a', '-q', ...devcontainerFilters(context)])
 	const containerId = (output ?? '').split('\n')[0]?.trim() ?? ''
 
 	if (containerId.length === 0) {

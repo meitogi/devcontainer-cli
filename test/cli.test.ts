@@ -68,3 +68,12 @@ test('migrate --help exits 0; a bad flag, a stray argument and a missing directo
 	assert.equal(devc('migrate', 'a', 'b').status, 2)
 	assert.equal(devc('migrate', '/nonexistent-dir-for-devc-test').status, 2)
 })
+
+test('mem is listed; --help exits 0; a bad flag and a bad interval exit 2', () => {
+	assert.match(devc('--help').stdout, /^  mem +Live memory/m)
+	assert.equal(devc('mem', '--help').status, 0)
+	assert.equal(devc('mem', '--bogus').status, 2)
+	const interval = devc('mem', '--interval', 'fast')
+	assert.equal(interval.status, 2)
+	assert.match(interval.stderr, /--interval must be a number/)
+})

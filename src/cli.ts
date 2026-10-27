@@ -12,6 +12,7 @@
 
 import { init, INIT_HELP } from './commands/init.js'
 import { initialize, INITIALIZE_HELP } from './commands/initialize.js'
+import { mem, MEM_HELP } from './commands/mem.js'
 import { migrate, MIGRATE_HELP } from './commands/migrate.js'
 import { runStub, STUB_COMMANDS } from './commands/stubs.js'
 import { installFailureHandlers, Logger } from './lib/logger.js'
@@ -38,6 +39,7 @@ Commands:
   initialize                 Host-side pre-container setup (initializeCommand)
   migrate [dir]              Report what a tree made by install.sh needs to move to v3
   firewall-mode [mode]       Report the firewall mode, or set it (off|basic|strict)
+  mem                        Live memory of the devcontainer, and what takes it
 ${STUB_COMMANDS.map((stub) => `  ${stub.name.padEnd(26)} ${stub.summary} (not implemented)`).join('\n')}
 
 Options:
@@ -71,6 +73,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 	if (first === 'initialize') return runInitialize(rest)
 	if (first === 'migrate') return runMigrate(rest)
 	if (first === 'firewall-mode') return runFirewallMode(rest)
+	if (first === 'mem') return runMem(rest)
 
 	const stub = STUB_COMMANDS.find((candidate) => candidate.name === first)
 	if (stub !== undefined) {
@@ -213,6 +216,70 @@ function runFirewallMode(args: readonly string[]): number {
 	} catch (error) {
 		if (error instanceof PathResolutionError) {
 			process.stderr.write(`devc firewall-mode: ${error.message}\n`)
+			return EXIT_USAGE
+		}
+		throw error
+	}
+}
+
+async function runMem(args: readonly string[]): Promise<number> {
+	let devcontainerDir: string | undefined
+	let container: string | undefined
+	let intervalMs: number | undefined
+	let once = false
+	let json = false
+	let procs = false
+
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i] as string
+		if (arg === '--help' || arg === '-h') {
+			process.stdout.write(MEM_HELP)
+			return EXIT_OK
+		}
+		if (arg === '--once') {
+			once = true
+			continue
+		}
+		if (arg === '--json') {
+			json = true
+			continue
+		}
+		if (arg === '--procs') {
+			procs = true
+			continue
+		}
+		let matched = false
+		for (const flag of ['--devcontainer-dir', '--container', '--interval']) {
+			if (arg !== flag && !arg.startsWith(`${flag}=`)) continue
+			const parsed = flagValue(args, i, flag)
+			if ('error' in parsed) {
+				process.stderr.write(`devc mem: ${parsed.error}\n`)
+				return EXIT_USAGE
+			}
+			if (flag === '--devcontainer-dir') devcontainerDir = parsed.value
+			else if (flag === '--container') container = parsed.value
+			else {
+				const seconds = Number(parsed.value)
+				if (!(seconds >= 0.5)) {
+					process.stderr.write(`devc mem: --interval must be a number of seconds, 0.5 or more\n`)
+					return EXIT_USAGE
+				}
+				intervalMs = Math.round(seconds * 1000)
+			}
+			i += parsed.consumed
+			matched = true
+			break
+		}
+		if (matched) continue
+		process.stderr.write(`devc mem: unknown option "${arg}"\n\n${MEM_HELP}`)
+		return EXIT_USAGE
+	}
+
+	try {
+		return await mem({ cwd: process.cwd(), devcontainerDir, container, intervalMs, once, json, procs })
+	} catch (error) {
+		if (error instanceof PathResolutionError) {
+			process.stderr.write(`devc mem: ${error.message}\n`)
 			return EXIT_USAGE
 		}
 		throw error

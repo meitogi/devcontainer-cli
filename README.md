@@ -191,6 +191,29 @@ warning and never written back.
 
 Supersedes `.devcontainer/firewall-mode.sh`, which a v3 tree no longer ships.
 
+## `devc mem`
+
+```
+npx @meitogi/devcontainer-cli mem [--once] [--json] [--procs]   # host
+npx devc mem [--once] [--json] [--procs]                        # container
+```
+
+A live, `top`-like view of the devcontainer's memory and of what takes it. The
+header is the figure Docker Desktop shows (cgroup usage minus the inactive file
+cache), split into processes, file cache, reclaimable cache and kernel, with the
+Docker VM's free memory and swap underneath. Below it, processes are grouped by
+what they are rather than by binary name — `ps` calls every VS Code node process
+`MainThread` — so the table reads "VS Code — extension host", "Claude Code",
+"TypeScript server", "Extension dbaeumer.vscode-eslint", with a Δ column over
+the last minute. `--procs` lists the PIDs under each group.
+
+Inside the container it reads `/proc` and `/sys/fs/cgroup`. On the host it
+finds the running devcontainer of the current workspace (or the only one
+running; `--container` picks one explicitly) and pipes the same collector to
+`node` through `docker exec`, so the image needs nothing beyond the Node it
+already has. `--json` prints the raw snapshots, one per line — the format a
+dashboard can consume.
+
 ## `devc initialize`
 
 The step VS Code runs through `initializeCommand`, before the container is
