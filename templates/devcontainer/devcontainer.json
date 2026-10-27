@@ -38,7 +38,12 @@
         "window.title": "{{PROJECT_DISPLAY_NAME}} [${localWorkspaceFolderBasename}] - Claude Code Sandbox - ${activeEditorShort}",
         "claudeCode.preferredLocation": "primary",
         "claudeCode.disableLoginPrompt": true,
-        "claudeCode.disableWebviewAuthRedirect": true
+        "claudeCode.disableWebviewAuthRedirect": true,
+        // Turns off VS Code's built-in Copilot (chat, inline suggestions) and
+        // stops its extension from loading: ~60 MB of code plus a native
+        // module in the extension host. Claude Code is a regular extension
+        // with its own views, not a chat participant, so it is unaffected.
+        "chat.disableAIFeatures": true
       }
     },
     "stitchu-devc": {

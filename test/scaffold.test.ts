@@ -26,7 +26,7 @@ const ANSWERS: ScaffoldAnswers = {
 	displayName: 'Demo App',
 	stack: 'node',
 	credsVolume: null,
-	claudeCodeVersion: '2.1.280',
+	claudeCodeVersion: '2.1.310',
 }
 
 /** The D15 tree, in full. */
@@ -100,7 +100,7 @@ test('the plan is exactly the D15 tree', () => {
 			'.claude/rules/project.md -> ../../.devcontainer/claude/CLAUDE-project.md',
 		],
 	)
-	assert.equal(plan.imageRef, 'ghcr.io/meitogi/devcontainer-sandbox:1.9.1-cc2.1.280')
+	assert.equal(plan.imageRef, 'ghcr.io/meitogi/devcontainer-sandbox:1.14.0-cc2.1.310')
 })
 
 test('every ownership entry names a file the plan produces', () => {
@@ -166,10 +166,10 @@ test('.env carries the answers live on their documented lines', () => {
 	assert.match(plain, /^#BASE_IMAGE=/m, 'default line keeps BASE_IMAGE commented')
 	assert.deepEqual(readEnvFile(join('/dev/null')), {})
 
-	const shared = buildPlan({ ...ANSWERS, credsVolume: 'claude-creds-team', claudeCodeVersion: '2.1.220' })
+	const shared = buildPlan({ ...ANSWERS, credsVolume: 'claude-creds-team', claudeCodeVersion: '2.1.280' })
 	const env = shared.files.find((file) => file.path === '.devcontainer/.env')?.content ?? ''
 	assert.match(env, /^CLAUDE_CREDS_VOLUME=claude-creds-team$/m)
-	assert.match(env, /^BASE_IMAGE=ghcr\.io\/meitogi\/devcontainer-sandbox:1\.9\.1-cc2\.1\.220$/m)
+	assert.match(env, /^BASE_IMAGE=ghcr\.io\/meitogi\/devcontainer-sandbox:1\.14\.0-cc2\.1\.280$/m)
 	// The example itself stays a template of commented defaults.
 	const example = shared.files.find((file) => file.path === '.devcontainer/.env.example')?.content ?? ''
 	assert.match(example, /^#DC_PROJECT=demo-app$/m)
@@ -251,7 +251,7 @@ test('appendGitignore separates from existing content and repairs a missing newl
 test('missingWtfEntries offers every devcontainer command to a file that has none', () => {
 	const fragment = buildPlan(ANSWERS).wtfcmdFragment
 	const keys = missingWtfEntries('- name: dev\n  cmd: npm run dev\n', fragment).map((entry) => entry.key)
-	assert.deepEqual(keys, ['firewall diff', 'firewall reload', 'ext-patch status', 'ext-patch update'])
+	assert.deepEqual(keys, ['firewall diff', 'firewall reload', 'ext-patch status', 'ext-patch update', 'mem'])
 	// The payload survives, not just the key: the reload keeps its TTY flags.
 	const reload = missingWtfEntries('', fragment).find((entry) => entry.key === 'firewall reload')
 	assert.match(reload?.text ?? '', /docker exec -it -u 0 "\$c" reload-firewall/)
@@ -273,7 +273,7 @@ test('missingWtfEntries matches on group + name, alias lists included', () => {
 		'      desc: A flag named like a command is not a command.',
 	].join('\n')
 	const keys = missingWtfEntries(existing, fragment).map((entry) => entry.key)
-	assert.deepEqual(keys, ['firewall reload', 'ext-patch update'])
+	assert.deepEqual(keys, ['firewall reload', 'ext-patch update', 'mem'])
 })
 
 test('appendWtfEntries keeps the existing file byte for byte and is idempotent', () => {

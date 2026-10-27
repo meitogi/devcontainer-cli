@@ -479,7 +479,7 @@ function wtfEntries(text: string): WtfEntry[] {
 		if (i < count && !(lines[i] ?? '').startsWith('- ')) continue
 		if (start >= 0) {
 			const body = lines.slice(start, i).join('\n').trimEnd()
-			entries.push({ key: `${wtfField(body, 'group')} ${wtfField(body, 'name')}`, text: body })
+			entries.push({ key: `${wtfField(body, 'group')} ${wtfField(body, 'name')}`.trim(), text: body })
 		}
 		start = i
 	}

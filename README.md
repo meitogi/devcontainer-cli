@@ -214,6 +214,9 @@ running; `--container` picks one explicitly) and pipes the same collector to
 already has. `--json` prints the raw snapshots, one per line — the format a
 dashboard can consume.
 
+A scaffolded project also gets it as `wtf mem` in its root `.wtfcmd.yaml`, so
+the same word works in a host terminal and in a container terminal.
+
 ## `devc initialize`
 
 The step VS Code runs through `initializeCommand`, before the container is

@@ -285,13 +285,13 @@ test('flags override the defaults and reach the files', async () => {
 			displayName: 'Custom Name',
 			credsVolume: 'none',
 			stack: 'php',
-			claudeCodeVersion: '2.1.220',
+			claudeCodeVersion: '2.1.280',
 		})
 		assert.equal(run.code, 0, run.err)
 		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
 		assert.equal(env['DC_PROJECT'], 'custom-id')
 		assert.equal(env['CLAUDE_CREDS_VOLUME'], undefined)
-		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:1.9.1-cc2.1.220')
+		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:1.14.0-cc2.1.280')
 		assert.equal(readDevcontainerJson(join(dir, '.devcontainer', 'devcontainer.json'))?.['name'], 'Custom Name — Claude Code Sandbox')
 		assert.match(readFileSync(join(dir, '.devcontainer', 'claude', 'CLAUDE-project.md'), 'utf8'), /Default stack\*\* : PHP/)
 		assert.match(run.out, /stacks\/php\.md/)
@@ -306,8 +306,8 @@ test('the newest published base wins over the template pin, as a live BASE_IMAGE
 		const run = await runInit(dir, { resolveBase: async () => ({ version: '9.9.9', source: 'ghcr' }) })
 		assert.equal(run.code, 0)
 		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
-		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:9.9.9-cc2.1.280')
-		assert.match(run.out, /Base image    : ghcr\.io\/meitogi\/devcontainer-sandbox:9\.9\.9-cc2\.1\.280  \(newest published on ghcr\.io\)/)
+		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:9.9.9-cc2.1.310')
+		assert.match(run.out, /Base image    : ghcr\.io\/meitogi\/devcontainer-sandbox:9\.9\.9-cc2\.1\.310  \(newest published on ghcr\.io\)/)
 	} finally {
 		rmSync(dir, { recursive: true, force: true })
 	}
@@ -336,7 +336,7 @@ test('--base pins by hand and is validated like --cc', async () => {
 		const run = await runInit(dir, { baseVersion: '1.7.2', resolveBase: async () => ({ version: '9.9.9', source: 'ghcr' }) })
 		assert.equal(run.code, 0)
 		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
-		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:1.7.2-cc2.1.280')
+		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:1.7.2-cc2.1.310')
 		assert.match(run.out, /\(--base\)/)
 	} finally {
 		rmSync(dir, { recursive: true, force: true })
@@ -365,12 +365,12 @@ test("an existing root .wtfcmd.yaml keeps its commands and gains the devcontaine
 
 		const dry = await runInit(dir, { dryRun: true })
 		assert.equal(dry.code, 0, dry.err)
-		assert.match(dry.out, /\+ \.wtfcmd\.yaml \(would add: firewall diff, firewall reload, ext-patch status, ext-patch update\)/)
+		assert.match(dry.out, /\+ \.wtfcmd\.yaml \(would add: firewall diff, firewall reload, ext-patch status, ext-patch update, mem\)/)
 		assert.equal(readFileSync(file, 'utf8'), mine, 'dry-run leaves the file alone')
 
 		const run = await runInit(dir)
 		assert.equal(run.code, 0, run.err)
-		assert.match(run.out, /\+ \.wtfcmd\.yaml \(added: firewall diff, firewall reload, ext-patch status, ext-patch update\)/)
+		assert.match(run.out, /\+ \.wtfcmd\.yaml \(added: firewall diff, firewall reload, ext-patch status, ext-patch update, mem\)/)
 		const merged = readFileSync(file, 'utf8')
 		assert.ok(merged.startsWith(`${mine}\n- group: firewall\n  name: diff\n  cwd: ./.devcontainer\n`))
 
