@@ -49,6 +49,7 @@
     --reapply{{ end }}{{ if .no_write_env }} --no-write-env{{ end }}
 
 - name: mem
+  cwd: ./
   desc: |
     Live memory of the devcontainer, and what takes it. Same command on the
     host and in the container: on the host it reads the running devcontainer
