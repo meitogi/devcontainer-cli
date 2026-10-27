@@ -133,6 +133,10 @@ test('host path: the collector runs through docker exec and streams its snapshot
 	const lines = text.trim().split('\n')
 	assert.equal(lines.length, 1, '--once emits a single snapshot')
 	const snapshot = JSON.parse(lines[0] as string) as MemSnapshot
-	assert.ok(snapshot.totals.current > 0)
-	assert.ok(snapshot.groups.some((group) => group.procs.length > 0))
+	// Not the cgroup figures: on a CI runner the process sits in the root
+	// cgroup, which has no memory.current. /proc is there on any Linux, and the
+	// collector finds itself in it under the tag the host passed.
+	assert.ok(snapshot.totals.vmTotal > 0)
+	const self = snapshot.groups.find((group) => group.label === 'devc mem (host collector)')
+	assert.ok(self !== undefined && self.procs.length === 1 && self.pss > 0, 'the collector reports itself')
 })
