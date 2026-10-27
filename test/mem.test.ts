@@ -32,6 +32,7 @@ test('classify names the processes ps shows as MainThread', () => {
 		[['/bin/bash', '/usr/local/bin/creds-watch'], 'bash creds-watch'],
 		[['/bin/zsh', '-c', '-l', 'source /tmp/snapshot.sh && ls'], 'zsh -c'],
 		[['/usr/bin/inotifywait', '-m', '/workspace'], 'inotifywait'],
+		[['node', '--input-type=module', '-', 'devc-mem'], 'devc mem (host collector)'],
 	]
 	for (const [argv, label] of cases) assert.equal(classify(argv), label, argv.join(' '))
 })
@@ -128,7 +129,7 @@ test('host path: the collector runs through docker exec and streams its snapshot
 	} finally {
 		process.env['PATH'] = path
 	}
-	assert.equal(readFileSync(argsFile, 'utf8').trim(), 'exec -i abc123 node --input-type=module -')
+	assert.equal(readFileSync(argsFile, 'utf8').trim(), 'exec -i abc123 node --input-type=module - devc-mem')
 	const lines = text.trim().split('\n')
 	assert.equal(lines.length, 1, '--once emits a single snapshot')
 	const snapshot = JSON.parse(lines[0] as string) as MemSnapshot

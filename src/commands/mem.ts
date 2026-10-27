@@ -10,7 +10,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { devcontainerFilters, hasDocker } from '../lib/docker.js'
-import { collect, type MemSnapshot } from '../lib/mem-collect.js'
+import { collect, COLLECTOR_TAG, type MemSnapshot } from '../lib/mem-collect.js'
 import { render } from '../lib/mem-render.js'
 import { resolveProjectPaths } from '../lib/paths.js'
 import { detectHostKind, readHostProbe } from '../lib/platform.js'
@@ -168,7 +168,7 @@ export function mem(options: MemOptions): Promise<number> {
 		source = `container ${containerId}`
 	}
 
-	const child = spawn('docker', ['exec', '-i', containerId, 'node', '--input-type=module', '-'], {
+	const child = spawn('docker', ['exec', '-i', containerId, 'node', '--input-type=module', '-', COLLECTOR_TAG], {
 		stdio: ['pipe', 'pipe', 'inherit'],
 	})
 	child.stdin.end(collectorScript(intervalMs, once))

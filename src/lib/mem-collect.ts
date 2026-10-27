@@ -92,11 +92,15 @@ function baseName(path: string): string {
 	return path.slice(path.lastIndexOf('/') + 1)
 }
 
+/** Trailing argv of the collector the host runs here, so it names itself in its own table. */
+export const COLLECTOR_TAG = 'devc-mem'
+
 /** What a process is, from its argv — every node process is `MainThread` to `ps`. */
 export function classify(argv: readonly string[]): string {
 	const exe = argv[0] ?? ''
 	const cmd = argv.join(' ')
 	if (exe.endsWith('/claude') || exe === 'claude') return 'Claude Code'
+	if (argv[argv.length - 1] === COLLECTOR_TAG) return 'devc mem (host collector)'
 	if (cmd.includes('tsserver')) return 'TypeScript server'
 	const type = /--type=(\w+)/.exec(cmd)?.[1]
 	if (type === 'extensionHost') return 'VS Code — extension host'
