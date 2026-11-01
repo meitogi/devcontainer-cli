@@ -29,7 +29,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Writable } from 'node:stream'
-import { initialize, stamp } from '../src/commands/initialize.js'
+import { initialize, stamp, unpublishedLine } from '../src/commands/initialize.js'
 import { DEFAULT_CLAUDE_CODE_VERSION } from '../src/lib/docker.js'
 import type { HostProbe } from '../src/lib/platform.js'
 
@@ -750,6 +750,8 @@ interface DockerStub {
 	label?: string
 	/** Non-zero from `docker inspect`, the way a silent daemon answers. */
 	inspectFails?: boolean
+	/** Non-zero from `docker image inspect`: the base is not on this host yet. */
+	imageMissing?: boolean
 }
 
 async function withDockerStub<T>(stub: DockerStub, fn: (trace: () => string) => Promise<T>): Promise<T> {
@@ -763,6 +765,7 @@ printf '%s\\n' "$*" >> ${JSON.stringify(tracePath)}
 case "$1" in
   ps) printf '%s\\n' ${JSON.stringify(stub.containerId ?? '')} ;;
   inspect) printf '%s\\n' ${JSON.stringify(stub.label ?? '')}; exit ${stub.inspectFails === true ? 1 : 0} ;;
+  image) exit ${stub.imageMissing === true ? 1 : 0} ;;
 esac
 exit 0
 `
@@ -1034,5 +1037,95 @@ test('drift under --dry-run: reported, never asked, never fatal', async () => {
 		for (const question of ask.asked) assert.doesNotMatch(question, /Rebuild the container/)
 	} finally {
 		cleanup()
+	}
+})
+
+test('unpublishedLine judges the exact tag against what GHCR lists, not the lines built today', () => {
+	const tags = ['1.13.0-cc2.1.272', '1.14.0-cc2.1.280', '1.14.0-cc2.1.310']
+	// A line the matrix dropped still pulls while its tag exists.
+	assert.equal(unpublishedLine('1.13.0', '2.1.272', tags), null)
+	assert.equal(
+		unpublishedLine('1.14.0', '2.1.272', tags),
+		'1.14.0-cc2.1.272 is not on ghcr.io (published for 1.14.0: 1.14.0-cc2.1.280, 1.14.0-cc2.1.310) - the pull will fail',
+	)
+	// A release still building: the line is in the matrix, the tag is not yet up.
+	assert.equal(
+		unpublishedLine('1.14.1', '2.1.310', tags),
+		'1.14.1-cc2.1.310 is not on ghcr.io (nothing is published for sandbox 1.14.1) - the pull will fail',
+	)
+})
+
+/** A registry that answers token then tags/list, recording each URL it was asked. */
+function fakeRegistry(tags: string[] | Error) {
+	const calls: string[] = []
+	const fetchImpl = async (url: string) => {
+		calls.push(url)
+		if (tags instanceof Error) throw tags
+		const body = url.includes('/token') ? { token: 't' } : { tags }
+		return { ok: true, status: 200, json: async () => body }
+	}
+	return { fetchImpl, calls }
+}
+
+test('first build: an unpublished pin is named before the pull, offline says nothing', async () => {
+	for (const [registry, expected] of [
+		[fakeRegistry(['1.8.0-cc2.1.272']), /^\[!\] 1\.8\.0-cc2\.1\.280 is not on ghcr\.io \(published for 1\.8\.0: 1\.8\.0-cc2\.1\.272\) - the pull will fail$/m],
+		[fakeRegistry(['1.8.0-cc2.1.280']), null],
+		[fakeRegistry(new Error('getaddrinfo ENOTFOUND ghcr.io')), null],
+	] as const) {
+		const { projectDir, devcontainerDir, cleanup } = fixture()
+		const capture = captured()
+		try {
+			pinBaseImage(devcontainerDir)
+			// No container and no image on the host: the one start that pulls.
+			const code = await withDockerStub({ imageMissing: true }, () =>
+				withoutAmbientPin(() =>
+					initialize({
+						devcontainerDir,
+						dryRun: true,
+						cwd: projectDir,
+						input: PIPED_STDIN(),
+						probe: LINUX_PROBE,
+						fetchImpl: registry.fetchImpl,
+						...capture,
+					}),
+				),
+			)
+			assert.equal(code, 0)
+			const screen = capture.text()
+			assert.match(screen, /^ {4}mode {9}first build$/m)
+			assert.equal(registry.calls.length > 0, true, 'the registry was asked')
+			if (expected === null) assert.doesNotMatch(screen, /is not on ghcr\.io/)
+			else assert.match(screen, expected)
+		} finally {
+			cleanup()
+		}
+	}
+})
+
+test('reopen and rebuild never ask the registry: nothing is pulled', async () => {
+	for (const stub of [{ containerId: 'c0ffee123456', label: PINNED }, {}]) {
+		const { projectDir, devcontainerDir, cleanup } = fixture()
+		const registry = fakeRegistry([])
+		try {
+			pinBaseImage(devcontainerDir)
+			const code = await withDockerStub(stub, () =>
+				withoutAmbientPin(() =>
+					initialize({
+						devcontainerDir,
+						dryRun: true,
+						cwd: projectDir,
+						input: PIPED_STDIN(),
+						probe: LINUX_PROBE,
+						fetchImpl: registry.fetchImpl,
+						...captured(),
+					}),
+				),
+			)
+			assert.equal(code, 0)
+			assert.deepEqual(registry.calls, [])
+		} finally {
+			cleanup()
+		}
 	}
 })

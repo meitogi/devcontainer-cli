@@ -47,40 +47,54 @@ function compare(a: number[], b: number[]): number {
 }
 
 /**
- * Newest published base on `claudeCodeVersion`'s line. Never throws: offline,
- * a slow registry (`timeoutMs`), a refused token or a malformed answer all
- * resolve to the template's default, with the reason for the summary line.
+ * Every tag GHCR publishes for the base image, or why it could not say.
+ * Never throws: offline, a slow registry (`timeoutMs`), a refused token or a
+ * malformed answer all come back as `{ reason }`.
  */
-export async function latestPublishedBase(
-	claudeCodeVersion: string,
+export async function publishedTags(
 	options: { fetchImpl?: FetchLike; timeoutMs?: number } = {},
-): Promise<BaseResolution> {
+): Promise<{ tags: string[] } | { reason: string }> {
 	const fetchImpl = options.fetchImpl ?? (globalThis.fetch as unknown as FetchLike | undefined)
-	if (fetchImpl === undefined) return fallback('no fetch in this Node')
+	if (fetchImpl === undefined) return { reason: 'no fetch in this Node' }
 	const controller = new AbortController()
 	const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 4000)
 	try {
 		const tokenRes = await fetchImpl(`${REGISTRY}/token?scope=repository:${REPO_PATH}:pull`, { signal: controller.signal })
-		if (!tokenRes.ok) return fallback(`ghcr.io/token answered ${tokenRes.status}`)
+		if (!tokenRes.ok) return { reason: `ghcr.io/token answered ${tokenRes.status}` }
 		const token = (await tokenRes.json()) as { token?: unknown }
-		if (typeof token.token !== 'string') return fallback('ghcr.io/token answered without a token')
+		if (typeof token.token !== 'string') return { reason: 'ghcr.io/token answered without a token' }
 		// n=1000: GHCR pages the list past that, and the repo is nowhere near it.
 		const listRes = await fetchImpl(`${REGISTRY}/v2/${REPO_PATH}/tags/list?n=1000`, {
 			headers: { Authorization: `Bearer ${token.token}` },
 			signal: controller.signal,
 		})
-		if (!listRes.ok) return fallback(`tags/list answered ${listRes.status}`)
+		if (!listRes.ok) return { reason: `tags/list answered ${listRes.status}` }
 		const list = (await listRes.json()) as { tags?: unknown }
-		if (!Array.isArray(list.tags)) return fallback('tags/list answered without tags')
-		const version = newestBase(list.tags.filter((t): t is string => typeof t === 'string'), claudeCodeVersion)
-		if (version === null) return fallback(`no published image on the cc${claudeCodeVersion} line`)
-		return { version, source: 'ghcr' }
+		if (!Array.isArray(list.tags)) return { reason: 'tags/list answered without tags' }
+		return { tags: list.tags.filter((t): t is string => typeof t === 'string') }
 	} catch (error) {
-		const message = error instanceof Error ? (error.name === 'AbortError' ? 'ghcr.io did not answer in time' : error.message) : String(error)
-		return fallback(message)
+		return {
+			reason: error instanceof Error ? (error.name === 'AbortError' ? 'ghcr.io did not answer in time' : error.message) : String(error),
+		}
 	} finally {
 		clearTimeout(timer)
 	}
+}
+
+/**
+ * Newest published base on `claudeCodeVersion`'s line. Never throws: whatever
+ * `publishedTags` could not answer resolves to the template's default, with the
+ * reason for the summary line.
+ */
+export async function latestPublishedBase(
+	claudeCodeVersion: string,
+	options: { fetchImpl?: FetchLike; timeoutMs?: number } = {},
+): Promise<BaseResolution> {
+	const published = await publishedTags(options)
+	if ('reason' in published) return fallback(published.reason)
+	const version = newestBase(published.tags, claudeCodeVersion)
+	if (version === null) return fallback(`no published image on the cc${claudeCodeVersion} line`)
+	return { version, source: 'ghcr' }
 }
 
 function fallback(reason: string): BaseResolution {

@@ -19,7 +19,6 @@ import {
 	baseImageTag,
 	DEFAULT_CLAUDE_CODE_VERSION,
 	imageExists,
-	PUBLISHED_CLAUDE_CODE_VERSIONS,
 	type RebuildSignals,
 	detectRebuildSignals,
 	hasDocker,
@@ -49,6 +48,7 @@ import {
 	type HostProbe,
 } from '../lib/platform.js'
 import { dumpRebuildContext } from '../lib/rebuild-debug.js'
+import { publishedTags, type FetchLike } from '../lib/registry.js'
 import { CLI_VERSION } from '../lib/version.js'
 
 export interface InitializeOptions {
@@ -77,6 +77,8 @@ export interface InitializeOptions {
 	out?: NodeJS.WritableStream
 	err?: NodeJS.WritableStream
 	probe?: HostProbe
+	/** How the registry is asked whether the pinned tag exists. Injectable so tests never touch the network. */
+	fetchImpl?: FetchLike
 }
 
 export const INITIALIZE_HELP = `devc initialize - host-side pre-container setup
@@ -231,8 +233,15 @@ async function runInitialize(context: Context): Promise<number> {
 		['log', dryRun ? '(none - dry-run writes nothing)' : relativeTo(devcontainerDir, logger.logPath)],
 	])
 	logger.log(start.warn ? `${MARK_WARN} ${start.consequence}` : `${MARK_STEP} ${start.consequence}`)
-	const unpublished = unpublishedLine(image)
-	if (unpublished !== null) logger.log(`${MARK_WARN} ${unpublished}`)
+	if (start.mode === FIRST_BUILD && image !== null && image.sandbox !== null && image.claudeCode !== null) {
+		const published = await publishedTags(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl })
+		if ('reason' in published) {
+			logger.trace({ kind: 'decide', name: 'BASE_TAG_PUBLISHED', value: 'unknown', why: published.reason })
+		} else {
+			const unpublished = unpublishedLine(image.sandbox, image.claudeCode, published.tags)
+			if (unpublished !== null) logger.log(`${MARK_WARN} ${unpublished}`)
+		}
+	}
 	// The panel above says what the tree pins. On a reopen that is not what is
 	// running, and until now nothing said so: the 2026-10-06 incident spent a
 	// morning on a container two patch versions behind the pin the panel named.
@@ -760,14 +769,19 @@ function imageRows(image: BaseImage | null): Row[] {
 /**
  * Why the pinned tag will not pull, or null when it will.
  *
- * `devc init` checks the line at scaffold time; this is the same check at the
- * moment it bites, because the pin is edited long after scaffolding. A ref that
- * is not ours is not judged: there is nothing to compare it against.
+ * Judged against the tags GHCR actually lists, not against the Claude Code
+ * lines the base repo builds today: an older tag stays pullable after its line
+ * leaves the matrix, and a release still building has no tag yet. Only asked on
+ * a first build, the one start that pulls.
  */
-function unpublishedLine(image: BaseImage | null): string | null {
-	if (image === null || image.claudeCode === null) return null
-	if (PUBLISHED_CLAUDE_CODE_VERSIONS.includes(image.claudeCode)) return null
-	return `claude code ${image.claudeCode} is not a published line (${PUBLISHED_CLAUDE_CODE_VERSIONS.join(', ')}) - the pull will fail`
+export function unpublishedLine(sandbox: string, claudeCode: string, tags: readonly string[]): string | null {
+	const tag = `${sandbox}-cc${claudeCode}`
+	if (tags.includes(tag)) return null
+	const prefix = `${sandbox}-cc`
+	const siblings = tags.filter((t) => t.startsWith(prefix))
+	const published =
+		siblings.length === 0 ? `nothing is published for sandbox ${sandbox}` : `published for ${sandbox}: ${siblings.join(', ')}`
+	return `${tag} is not on ghcr.io (${published}) - the pull will fail`
 }
 
 /**
@@ -795,7 +809,7 @@ interface BaseDrift {
  * someone into a rebuild they do not need.
  *
  * Deliberately narrow: the sandbox version and nothing else. Not the Claude
- * Code version, which `unpublishedLine` already judges, and not the full ref,
+ * Code version, which `unpublishedLine` judges on a first build, and not the full ref,
  * which differs between hosts for reasons that are not drift.
  */
 function baseVersionDrift(image: BaseImage | null, signals: RebuildSignals): BaseDrift | null {
@@ -848,6 +862,8 @@ interface StartMode {
  * the trade, because `first build` is the one that costs 2-3 GB and getting
  * that one right is what the line is for.
  */
+const FIRST_BUILD = 'first build'
+
 function startMode(context: { signals: RebuildSignals; image: BaseImage | null }): StartMode {
 	if (!hasDocker()) {
 		return {
@@ -877,7 +893,7 @@ function startMode(context: { signals: RebuildSignals; image: BaseImage | null }
 		}
 	}
 	return {
-		mode: 'first build',
+		mode: FIRST_BUILD,
 		consequence: 'the base image is pulled next, about 2-3 GB, once',
 		warn: false,
 		next: 'Press Enter to hand over to VS Code',
