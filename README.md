@@ -31,12 +31,13 @@ it walks `devc init` question by question.
 | `devc initialize` | **implemented** — host-side pre-container setup |
 | `devc migrate` | **implemented** — read-only report on an `install.sh` tree and what moving it costs |
 | `devc firewall-mode` | **implemented** — report the firewall mode, or set it |
+| `devc notify send` | **implemented** — a notification through the Notify VS Code extension |
 | `devc update` | stub — bump base + Claude Code versions |
 | `devc doctor` | stub — diagnostics |
 
 `firewall-mode` is the one firewall verb that shipped; the general
 `devc firewall` of the design's command table is still absent, as are `patch`,
-`skill`, `notify` and `host` — absent rather than stubbed. `devc knowledge` and
+`skill` and `host` — absent rather than stubbed. `devc knowledge` and
 `devc lessons` were dropped for v1 — those files are edited directly.
 
 ## What this scaffolds
@@ -242,7 +243,8 @@ order:
    by compose; bumping that tag is what an upgrade means.
 7. Prompts for the Claude mode on first run, writes the flag files, aligns the
    proxy variables in `.env` with the firewall mode, prints a summary, and spawns
-   the host notify daemon.
+   the host notify daemon — unless the Notify VS Code extension serves the
+   project (see `NOTIFY_DAEMON` below).
 
 ```
 devc initialize [--devcontainer-dir <path>] [--dry-run]
@@ -255,6 +257,20 @@ daemon.
 |---|---|
 | `DEBUG=1` | Structured decision trace beside the log |
 | `DEBUG_REBUILD_CONTEXT=1` | Dump the rebuild-signal diagnostic |
+| `NOTIFY_DAEMON=auto\|on\|off` | `auto` (default): spawn the host daemon only when no Notify extension wrote `tmp/notify/.extension.json` in the last 7 days ; `on` always ; `off` never. A daemon still running from an earlier boot is reported with its stop command |
+
+### `devc notify send`
+
+```
+devc notify send <message> [--title <text>] [--sid <id>] [--devcontainer-dir <path>]
+```
+
+Appends one `send` line to `.devcontainer/tmp/notify/<sid>.jsonl`; the Notify
+VS Code extension shows it at once on the machine holding the window (over
+Remote-SSH, the other Mac). Nothing is displayed by `devc` itself. The message
+is capped at 200 characters, the title at 64; `--sid` defaults to a fresh UUID.
+The container's `notify send` (sandbox image) writes the same line. Exit 0
+written, 1 the append failed, 2 usage error.
 
 ### Notable divergences from the bash script
 

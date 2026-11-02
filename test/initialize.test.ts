@@ -1129,3 +1129,61 @@ test('reopen and rebuild never ask the registry: nothing is pulled', async () =>
 		}
 	}
 })
+
+// The daemon gives way to the Notify extension: a fresh .extension.json in the
+// queue (the extension rewrites it hourly) means no spawn, and the row names
+// who serves the queue instead — dry-run included, since nothing is written.
+function seedNotify(devcontainerDir: string, opts: { marker?: boolean; pid?: boolean; env?: string }): void {
+	mkdirSync(join(devcontainerDir, 'tmp', 'configured'), { recursive: true })
+	writeFileSync(join(devcontainerDir, 'tmp', 'configured', 'claude-mode'), 'CLAUDE-dev.md\n', 'utf8')
+	mkdirSync(join(devcontainerDir, 'tmp', 'notify'), { recursive: true })
+	if (opts.marker) writeFileSync(join(devcontainerDir, 'tmp', 'notify', '.extension.json'), JSON.stringify({ version: '0.0.1', ts: Date.now() }), 'utf8')
+	if (opts.pid) writeFileSync(join(devcontainerDir, 'tmp', 'notify', '.daemon.pid'), '4242\n', 'utf8')
+	if (opts.env !== undefined) writeFileSync(join(devcontainerDir, '.env'), opts.env, 'utf8')
+}
+
+async function notifyScreen(opts: { marker?: boolean; pid?: boolean; env?: string; dryRun?: boolean }): Promise<{ screen: string; spawned: boolean }> {
+	const { projectDir, devcontainerDir, cleanup } = fixture()
+	try {
+		seedNotify(devcontainerDir, opts)
+		const capture = captured()
+		const code = await withStubDocker(() =>
+			initialize({ devcontainerDir, dryRun: opts.dryRun ?? false, cwd: projectDir, input: TTY_STDIN(), ask: neverAsked, probe: LINUX_PROBE, ...capture }),
+		)
+		assert.equal(code, 0)
+		return { screen: capture.text(), spawned: existsSync(join(devcontainerDir, 'tmp', 'notify', 'daemon.log')) }
+	} finally {
+		cleanup()
+	}
+}
+
+test('notify: a fresh extension marker → no daemon, the row names the extension', async () => {
+	const { screen, spawned } = await notifyScreen({ marker: true })
+	assert.equal(spawned, false, 'no spawn attempt (it would append to daemon.log)')
+	assert.match(screen, /^\[\+\] notify {7}VS Code extension 0\.0\.1$/m)
+	assert.match(screen, /^ready, all clear$/m)
+})
+
+test('notify: marker + a live daemon from an older devc → warn with its pid and the stop command', async () => {
+	const { screen, spawned } = await notifyScreen({ marker: true, pid: true })
+	assert.equal(spawned, false)
+	assert.match(screen, /^\[!\] notify {7}VS Code extension 0\.0\.1$/m)
+	assert.match(screen, /^ {17}a notify daemon from an earlier boot is still running \(pid 4242\) — the extension stands by until it stops$/m)
+	assert.match(screen, /^ {17}stop it: kill -TERM 4242$/m)
+	assert.match(screen, /^ready, 1 warning: notify$/m)
+})
+
+test('notify: NOTIFY_DAEMON=off in .env → no daemon even without the extension ; on → spawn despite the marker', async () => {
+	const off = await notifyScreen({ env: 'NOTIFY_DAEMON=off\n' })
+	assert.equal(off.spawned, false)
+	assert.match(off.screen, /^\[\+\] notify {7}off \(NOTIFY_DAEMON=off\)$/m)
+	const on = await notifyScreen({ marker: true, env: 'NOTIFY_DAEMON=on\n' })
+	// The fixture ships no daemon (NOTIFY_DAEMON_DIR above): the spawn path reports it.
+	assert.match(on.screen, /^\[!\] notify {7}no daemon found$/m)
+})
+
+test('notify: --dry-run with the marker shows the extension row and writes nothing', async () => {
+	const { screen, spawned } = await notifyScreen({ marker: true, dryRun: true })
+	assert.equal(spawned, false)
+	assert.match(screen, /^\[\+\] notify {7}VS Code extension 0\.0\.1$/m)
+})

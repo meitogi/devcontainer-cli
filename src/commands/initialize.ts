@@ -29,7 +29,8 @@ import { readEnvFile, setEnvVar, uncommentEnvVar, unsetEnvVar } from '../lib/env
 import { readMode, syncProxyEnv } from '../lib/firewall.js'
 import { ESC, Logger } from '../lib/logger.js'
 import { readExtPatchesConfig, type ExtPatchesConfig } from '../lib/machine-config.js'
-import { spawnNotifyDaemon, type NotifyReport } from '../lib/notify-daemon.js'
+import { spawnNotifyDaemon } from '../lib/notify-daemon.js'
+import { decideNotify, parseDaemonMode, queueDirOf, readQueueSignals, type NotifyRow } from '../lib/notify-queue.js'
 import {
 	classifyDevcontainer,
 	defaultProjectId,
@@ -100,6 +101,8 @@ Options:
 Environment:
   DEBUG=1                    Write a structured decision trace next to the log
   DEBUG_REBUILD_CONTEXT=1    Dump the rebuild-signal diagnostic
+  NOTIFY_DAEMON=auto|on|off  Host notify daemon: auto = only when no Notify
+                             VS Code extension served the project in 7 days
 `
 
 export async function initialize(options: InitializeOptions): Promise<number> {
@@ -364,7 +367,9 @@ async function runInitialize(context: Context): Promise<number> {
 
 		// Spawned before the panel, not after: its outcome is one of the panel's
 		// rows, and a panel that reports the boot has to be the last thing drawn.
-		const notify = await spawnNotifyDaemon({ logger, devcontainerDir, projectDir, dryRun })
+		// Only when the Notify extension has not been seen on this queue
+		// (NOTIFY_DAEMON=auto), or when forced on: the extension replaces it.
+		const notify = await notifyStep({ logger, devcontainerDir, projectDir, dryRun, mode: env['NOTIFY_DAEMON'] })
 		printSummary({ devcontainerDir, modeFlag, firewallFlag, logger, dryRun, projectId, notify, start, drift })
 
 		// Pause only when an interactive prompt actually ran. The Claude-mode
@@ -543,6 +548,24 @@ async function promptClaudeMode(options: {
 	logger.log(`${MARK_OK} Claude mode: ${value.replace(/^CLAUDE-/, '').replace(/\.md$/, '')}`)
 }
 
+/**
+ * The host daemon, or not. Read-only until the spawn itself, so a dry run
+ * still shows the extension row; a spawn keeps its own report, and an
+ * unreadable NOTIFY_DAEMON rides along as one more reason.
+ */
+async function notifyStep(options: { logger: Logger; devcontainerDir: string; projectDir: string; dryRun: boolean; mode: string | undefined }): Promise<NotifyRow | null> {
+	const { logger, devcontainerDir, projectDir, dryRun } = options
+	const now = Date.now()
+	const decision = decideNotify(parseDaemonMode(options.mode), readQueueSignals(queueDirOf(devcontainerDir), now), now)
+	if (!decision.spawn) {
+		logger.rawToLogOnly(`ℹ Notify : no daemon spawned — ${decision.row.value}`)
+		return decision.row
+	}
+	const report = await spawnNotifyDaemon({ logger, devcontainerDir, projectDir, dryRun })
+	if (report === null || decision.note === null) return report
+	return { value: report.value, state: 'warn', why: report.why === null ? decision.note : `${report.why}; ${decision.note}` }
+}
+
 interface SummaryOptions {
 	devcontainerDir: string
 	modeFlag: string
@@ -550,7 +573,7 @@ interface SummaryOptions {
 	logger: Logger
 	dryRun: boolean
 	projectId: string
-	notify: NotifyReport | null
+	notify: NotifyRow | null
 	start: StartMode
 	drift: BaseDrift | null
 }

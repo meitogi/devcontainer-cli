@@ -14,6 +14,7 @@ import { init, INIT_HELP } from './commands/init.js'
 import { initialize, INITIALIZE_HELP } from './commands/initialize.js'
 import { mem, MEM_HELP } from './commands/mem.js'
 import { migrate, MIGRATE_HELP } from './commands/migrate.js'
+import { notifySend, NOTIFY_HELP } from './commands/notify.js'
 import { runStub, STUB_COMMANDS } from './commands/stubs.js'
 import { installFailureHandlers, Logger } from './lib/logger.js'
 import { firewallMode, FIREWALL_MODE_HELP } from './commands/firewall-mode.js'
@@ -40,6 +41,7 @@ Commands:
   migrate [dir]              Report what a tree made by install.sh needs to move to v3
   firewall-mode [mode]       Report the firewall mode, or set it (off|basic|strict)
   mem                        Live memory of the devcontainer, and what takes it
+  notify send <message>      Send a notification through the Notify VS Code extension
 ${STUB_COMMANDS.map((stub) => `  ${stub.name.padEnd(26)} ${stub.summary} (not implemented)`).join('\n')}
 
 Options:
@@ -74,6 +76,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 	if (first === 'migrate') return runMigrate(rest)
 	if (first === 'firewall-mode') return runFirewallMode(rest)
 	if (first === 'mem') return runMem(rest)
+	if (first === 'notify') return runNotify(rest)
 
 	const stub = STUB_COMMANDS.find((candidate) => candidate.name === first)
 	if (stub !== undefined) {
@@ -280,6 +283,63 @@ async function runMem(args: readonly string[]): Promise<number> {
 	} catch (error) {
 		if (error instanceof PathResolutionError) {
 			process.stderr.write(`devc mem: ${error.message}\n`)
+			return EXIT_USAGE
+		}
+		throw error
+	}
+}
+
+function runNotify(args: readonly string[]): number {
+	if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
+		process.stdout.write(NOTIFY_HELP)
+		return EXIT_OK
+	}
+	if (args[0] !== 'send') {
+		process.stderr.write(`devc notify: unknown subcommand "${args[0]}"\n\n${NOTIFY_HELP}`)
+		return EXIT_USAGE
+	}
+	const values: { title?: string; sid?: string; devcontainerDir?: string } = {}
+	const words: string[] = []
+	for (let i = 1; i < args.length; i++) {
+		const arg = args[i] as string
+		if (arg === '--help' || arg === '-h') {
+			process.stdout.write(NOTIFY_HELP)
+			return EXIT_OK
+		}
+		if (arg === '--') {
+			words.push(...args.slice(i + 1))
+			break
+		}
+		let matched = false
+		for (const [flag, key] of [['--title', 'title'], ['--sid', 'sid'], ['--devcontainer-dir', 'devcontainerDir']] as const) {
+			if (arg !== flag && !arg.startsWith(`${flag}=`)) continue
+			const parsed = flagValue(args, i, flag)
+			if ('error' in parsed) {
+				process.stderr.write(`devc notify send: ${parsed.error}\n`)
+				return EXIT_USAGE
+			}
+			values[key] = parsed.value
+			i += parsed.consumed
+			matched = true
+			break
+		}
+		if (matched) continue
+		if (arg.startsWith('-') && arg !== '-') {
+			process.stderr.write(`devc notify send: unknown option "${arg}"\n\n${NOTIFY_HELP}`)
+			return EXIT_USAGE
+		}
+		words.push(arg)
+	}
+	const message = words.join(' ')
+	if (!message.trim()) {
+		process.stderr.write(`devc notify send: a message is required\n\n${NOTIFY_HELP}`)
+		return EXIT_USAGE
+	}
+	try {
+		return notifySend({ cwd: process.cwd(), message, ...values })
+	} catch (error) {
+		if (error instanceof PathResolutionError) {
+			process.stderr.write(`devc notify send: ${error.message}\n`)
 			return EXIT_USAGE
 		}
 		throw error
