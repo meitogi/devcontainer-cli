@@ -18,3 +18,7 @@
 
 # Ollama server on the host (port 11434) — used in local-direct mode
 # host:11434
+
+# Agent browser on the host (its CDP proxy ; instance b = 9224, c = 9225…) —
+# see the Agent browser section of .env
+# host:9223
