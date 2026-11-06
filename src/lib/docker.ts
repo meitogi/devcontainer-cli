@@ -20,7 +20,7 @@ import { hasCommand, runCapture } from './proc.js'
 export const DEFAULT_CLAUDE_CODE_VERSION = '2.1.310'
 
 /** Base-image version the scaffold pins; bumps with the base repo's releases. */
-export const DEFAULT_BASE_VERSION = '1.14.1'
+export const DEFAULT_BASE_VERSION = '1.17.1'
 
 /**
  * The Claude Code versions the base repo currently publishes an image for —
