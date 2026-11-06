@@ -47,3 +47,108 @@
     ext-patches-update{{ if .check }} --check{{ end }}{{ if .ref }} --ref
     {{ .ref }}{{ end }}{{ if .dir }} --dir {{ .dir }}{{ end }}{{ if .reapply }}
     --reapply{{ end }}{{ if .no_write_env }} --no-write-env{{ end }}
+
+# ---- agent-browser — the agent's own Chromium on the host -------------------
+# Off until AGENT_BROWSER_ORIGINS is set (.env, « Agent browser ») and its port
+# opened (firewall/ports.txt). up / down / status / env / handoff run in the
+# container ; host runs on the Mac (or Windows : host-agent.ps1, see the skill).
+
+- group: agent-browser
+  name: up
+  desc: Open a page in the agent browser (default AGENT_BROWSER_URL).
+  args:
+    - name: url
+      desc: Page to open.
+      default: ""
+  flags:
+    - name: instance
+      desc: Which browser (a, b…).
+      default: a
+  cmd: agent-browser -i {{ esc .instance }} up{{ if .url }} {{ esc .url }}{{ end }}
+
+- group: agent-browser
+  name: down
+  desc: Turn the agent browser's Chromium off.
+  flags:
+    - name: instance
+      desc: Which browser (a, b…).
+      default: a
+  cmd: agent-browser -i {{ esc .instance }} down
+
+- group: agent-browser
+  name: status
+  desc: Route (host or sidecar), state, firewall, kit hash.
+  flags:
+    - name: instance
+      desc: Which browser (a, b…).
+      default: a
+  cmd: agent-browser -i {{ esc .instance }} status
+
+- group: agent-browser
+  name: env
+  desc: 'The CDP endpoint : eval "$(wtf agent-browser env)" before a script that reads CDP_HOST / CDP_PORT.'
+  flags:
+    - name: instance
+      desc: Which browser (a, b…).
+      default: a
+  cmd: agent-browser -i {{ esc .instance }} env
+
+- group: agent-browser
+  name: handoff
+  desc: |
+    Give the agent browser to yourself : a real window on the host, same
+    profile, a banner with Done — to sign in to a site, solve a captcha, look.
+    Done (or closing the window) hands it back, headless again.
+  args:
+    - name: url
+      desc: Page to open ; default the page it shows.
+      default: ""
+  flags:
+    - name: say
+      desc: The request shown in the banner.
+      default: ""
+    - name: instance
+      desc: Which browser (a, b…).
+      default: a
+  cmd: agent-browser -i {{ esc .instance }} handoff{{ if .url }} {{ esc .url }}{{ end }}{{ if .say }} --say {{ esc .say }}{{ end }}
+
+- group: agent-browser
+  name: host
+  cwd: ../
+  desc: |
+    HOST ONLY (the Mac's Terminal). Extracts the kit from the image, then runs
+    host-agent.sh's verb :
+      wtf agent-browser host install --all      every instance ports.txt opens
+      wtf agent-browser host start b            (stop, list, status, logs, uninstall)
+      wtf agent-browser host run x --temp --port 9222   a temporary browser
+      wtf agent-browser host install-chromium
+  args:
+    - name: verb
+      desc: install, start, stop, list, status, logs, run, uninstall, install-chromium.
+      default: status
+      test: ^(install|start|stop|list|status|logs|run|uninstall|install-chromium|instances)$
+    - name: instances
+      desc: Browsers by letter (a, b…).
+      is_array: true
+      test: ^[a-z]$
+  flags:
+    - name: all
+      desc: install every instance the firewall opens.
+      default: ""
+      test: "$bool"
+    - name: temp
+      desc: run only — Ctrl-C deletes its profile.
+      default: ""
+      test: "$bool"
+    - name: visible
+      desc: install / run with a real window on every start.
+      default: ""
+      test: "$bool"
+    - name: port
+      desc: install / run one instance on this proxy port (the firewall must open it).
+      default: ""
+  cmd: |
+    KIT="$HOME/Library/Application Support/agent-browser/$(sed -n 's/^DC_PROJECT=//p' .devcontainer/.env | tail -1)/kit"
+    mkdir -p "$KIT"
+    docker compose -f .devcontainer/docker-compose.yml run --rm --no-deps -T app agent-browser host-kit | tar -x -C "$KIT" || exit 1
+    bash "$KIT/host-agent.sh" {{ esc .verb }}{{ range .instances }} {{ esc . }}{{ end }}{{ if .all }} --all{{ end }}{{ if .temp }} --temp{{ end }}{{ if .visible }} --visible{{ end }}{{ if .port }} --port {{ esc .port }}{{ end }}
