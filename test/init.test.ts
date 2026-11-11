@@ -291,7 +291,7 @@ test('flags override the defaults and reach the files', async () => {
 		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
 		assert.equal(env['DC_PROJECT'], 'custom-id')
 		assert.equal(env['CLAUDE_CREDS_VOLUME'], undefined)
-		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:1.17.1-cc2.1.280')
+		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:1.17.3-cc2.1.280')
 		assert.equal(readDevcontainerJson(join(dir, '.devcontainer', 'devcontainer.json'))?.['name'], 'Custom Name — Claude Code Sandbox')
 		assert.match(readFileSync(join(dir, '.devcontainer', 'claude', 'CLAUDE-project.md'), 'utf8'), /Default stack\*\* : PHP/)
 		assert.match(run.out, /stacks\/php\.md/)
@@ -306,8 +306,8 @@ test('the newest published base wins over the template pin, as a live BASE_IMAGE
 		const run = await runInit(dir, { resolveBase: async () => ({ version: '9.9.9', source: 'ghcr' }) })
 		assert.equal(run.code, 0)
 		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
-		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:9.9.9-cc2.1.310')
-		assert.match(run.out, /Base image    : ghcr\.io\/meitogi\/devcontainer-sandbox:9\.9\.9-cc2\.1\.310  \(newest published on ghcr\.io\)/)
+		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:9.9.9-cc2.1.322')
+		assert.match(run.out, /Base image    : ghcr\.io\/meitogi\/devcontainer-sandbox:9\.9\.9-cc2\.1\.322  \(newest published on ghcr\.io\)/)
 	} finally {
 		rmSync(dir, { recursive: true, force: true })
 	}
@@ -336,7 +336,7 @@ test('--base pins by hand and is validated like --cc', async () => {
 		const run = await runInit(dir, { baseVersion: '1.7.2', resolveBase: async () => ({ version: '9.9.9', source: 'ghcr' }) })
 		assert.equal(run.code, 0)
 		const env = readEnvFile(join(dir, '.devcontainer', '.env'))
-		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:1.7.2-cc2.1.310')
+		assert.equal(env['BASE_IMAGE'], 'ghcr.io/meitogi/devcontainer-sandbox:1.7.2-cc2.1.322')
 		assert.match(run.out, /\(--base\)/)
 	} finally {
 		rmSync(dir, { recursive: true, force: true })
