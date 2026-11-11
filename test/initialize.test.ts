@@ -633,7 +633,7 @@ test('nothing builds the base image — even when a Dockerfile.base is present',
 		assert.equal(code, 0)
 		const argvs = read(trace) ?? ''
 		assert.doesNotMatch(argvs, /^build\b/m, 'no docker build was spawned')
-		assert.match(argvs, /^ps -a -q --filter/m, 'the reopen probe still ran')
+		assert.match(argvs, /^ps -a --format {{.ID}} {{.State}} --filter/m, 'the reopen probe still ran')
 		assert.doesNotMatch(sink.text(), /Building Claude Devcontainer Base/)
 	} finally {
 		process.env['PATH'] = savedPath
@@ -739,7 +739,7 @@ test('the screen is one vocabulary, names both versions, and keeps recipes in th
  * answers the drift check turns on.
  */
 interface DockerStub {
-	/** What `docker ps -a -q --filter …` prints. Absent = no container matched. */
+	/** What `docker ps -a --format … --filter …` prints. Absent = no container matched. */
 	containerId?: string
 	/**
 	 * What `docker inspect --format '{{index .Config.Labels …}}'` prints.
@@ -813,7 +813,7 @@ test('drift, non-interactive: the pin and the running version are both named, an
 				// The label is read off the container the probe already found, not
 				// from a second `docker ps` of its own.
 				assert.match(trace(), /^inspect --format \{\{index \.Config\.Labels "org\.stitchu\.base\.version"\}\} c0ffee123456$/m)
-				assert.equal((trace().match(/^ps -a -q --filter/gm) ?? []).length, 1, 'one container probe, not two')
+				assert.equal((trace().match(/^ps -a --format {{.ID}} {{.State}} --filter/gm) ?? []).length, 1, 'one container probe, not two')
 				return result
 			}),
 		)
@@ -827,6 +827,38 @@ test('drift, non-interactive: the pin and the running version are both named, an
 		assert.match(screen, /^\[!\] base version pin 1\.8\.0, running 1\.7\.1$/m)
 		assert.match(screen, /^ {17}Rebuild Container to adopt 1\.8\.0$/m)
 		assert.match(screen, /^ready, 1 warning: base version$/m, 'the verdict names it rather than counting it')
+	} finally {
+		cleanup()
+	}
+})
+
+test('a container Docker is still removing is a rebuild, not a drift to ask about', async () => {
+	// VS Code's Rebuild gives up on its `docker rm -f` after ~6 s while Docker
+	// keeps tearing the container down; the Retry runs this with it still listed.
+	const { projectDir, devcontainerDir, cleanup } = fixture()
+	const capture = captured()
+	try {
+		pinBaseImage(devcontainerDir)
+		const code = await withDockerStub({ containerId: 'c0ffee123456 removing', label: '1.7.1' }, (trace) =>
+			withoutAmbientPin(async () => {
+				const result = await initialize({
+					devcontainerDir,
+					dryRun: false,
+					cwd: projectDir,
+					input: PIPED_STDIN(),
+					ask: neverAsked,
+					probe: LINUX_PROBE,
+					...capture,
+				})
+				assert.doesNotMatch(trace(), /^inspect /m, 'no label read off a container on its way out')
+				return result
+			}),
+		)
+
+		assert.equal(code, 0)
+		const screen = capture.text()
+		assert.match(screen, /^ {4}mode {9}rebuild$/m)
+		assert.doesNotMatch(screen, /the container runs base/)
 	} finally {
 		cleanup()
 	}

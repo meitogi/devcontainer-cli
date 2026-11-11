@@ -111,8 +111,8 @@ export function detectRebuildSignals(context: DetectContext): RebuildSignals {
 
 	if (!hasDocker()) return { requested: false, containerId: null }
 
-	const output = runCapture(['docker', 'ps', '-a', '-q', ...devcontainerFilters(context)])
-	const containerId = (output ?? '').split('\n')[0]?.trim() ?? ''
+	const output = runCapture(['docker', 'ps', '-a', '--format', '{{.ID}} {{.State}}', ...devcontainerFilters(context)])
+	const containerId = firstSurvivingContainer(output ?? '')
 
 	if (containerId.length === 0) {
 		logger.rawToLogOnly('  ↳ No matching devcontainer for this workspace — rebuild or first-time')
@@ -122,6 +122,24 @@ export function detectRebuildSignals(context: DetectContext): RebuildSignals {
 	logger.rawToLogOnly(`  ↳ Devcontainer present (${containerId}, any state) — reopen, no base rebuild`)
 	logger.trace({ kind: 'decide', name: 'BUILD_BASE_REQUESTED', value: '0', why: `container ${containerId} present` })
 	return { requested: false, containerId }
+}
+
+/**
+ * The first container of a `docker ps --format '{{.ID}} {{.State}}'` listing
+ * that will still exist once VS Code is done with it, or '' when none will.
+ *
+ * A container in `removing` state is a Rebuild in flight, not one to reopen.
+ * VS Code's own `docker rm -f` gives up after about six seconds while Docker
+ * keeps tearing the container down, and the Retry runs initializeCommand
+ * while it is still listed: counted as present, it made a rebuild read as a
+ * reopen and ask whether to rebuild.
+ */
+export function firstSurvivingContainer(listing: string): string {
+	for (const line of listing.split('\n')) {
+		const [id, state] = line.trim().split(' ')
+		if (id !== undefined && id.length > 0 && state !== 'removing') return id
+	}
+	return ''
 }
 
 /** The label the base image bakes in at its last layer. */
