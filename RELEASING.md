@@ -35,6 +35,12 @@ Maintainer documentation. If you only consume the package, you want
    `workflow_dispatch` and `dry_run=true`. Read the file listing in the log.
 4. Tag `v<version>` and push the tag. CI then **stages** the version.
 5. Review the staged tarball and approve it with 2FA. That is the release.
+6. Move the dogfood onto it: in the repository root, `npm install -D
+   @meitogi/devcontainer-cli@^<version>` and commit `package.json` with the
+   lockfile. `initialize.sh` runs the local copy in `node_modules/` when there
+   is one, so until this step the dogfood keeps booting on the previous
+   release — on 2026-11-11 it ran 0.12.0 two releases late, and warned that a
+   published image would not pull.
 
 ```sh
 npm version 0.1.2 --no-git-tag-version
