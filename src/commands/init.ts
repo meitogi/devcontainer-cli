@@ -16,7 +16,7 @@ import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { detectStack, isStackId, STACKS, stackInfo, type StackId } from '../lib/detect-stack.js'
 import { readDevcontainerJson } from '../lib/devcontainer-json.js'
-import { type BaseResolution, latestPublishedBase } from '../lib/registry.js'
+import { type BaseResolution, baseFor, publishedLines, publishedTags } from '../lib/registry.js'
 import {
 	BASE_IMAGE_REPOSITORY,
 	DEFAULT_BASE_VERSION,
@@ -66,8 +66,8 @@ export interface InitOptions {
 	claudeCodeVersion?: string | undefined
 	/** `--base x.y.z`: pin this base version instead of resolving the newest published one. */
 	baseVersion?: string | undefined
-	/** Base-version resolver; tests inject one so the wizard never reaches ghcr.io. */
-	resolveBase?: ((claudeCodeVersion: string) => Promise<BaseResolution>) | undefined
+	/** The base image's published tags; tests inject them so the wizard never reaches ghcr.io. */
+	registry?: (() => ReturnType<typeof publishedTags>) | undefined
 	/** Non-interactive ext-patches opt-in; token comes from EXT_PATCHES_TOKEN, never a flag. */
 	extPatchesRepo?: string | undefined
 	extPatchesRef?: string | undefined
@@ -114,7 +114,7 @@ Options:
   --creds-volume <name|none> Claude credentials volume to share, or "none" for a
                              private per-project one
   --stack <id>               ${STACKS.map((stack) => stack.id).join(' | ')}
-  --cc <x.y.z>               Claude Code line to pin (published: ${PUBLISHED_CLAUDE_CODE_VERSIONS.join(', ')})
+  --cc <x.y.z>               Claude Code line to pin (read from ghcr.io; offline: ${PUBLISHED_CLAUDE_CODE_VERSIONS.join(', ')})
   --base <x.y.z>             Base image version to pin (default: the newest published on that line, read from ghcr.io; offline: ${DEFAULT_BASE_VERSION})
   --ext-patches-repo <owner/name>  Extension patchers repo (non-interactive opt-in;
                              optional when EXT_PATCHES_TOKEN reads one repo)
@@ -342,7 +342,14 @@ async function collectAnswers(wizard: WizardContext): Promise<CollectedAnswers |
 	const credsVolume = await chooseCredsVolume(wizard, projectId)
 
 	// --- 5. Claude Code line ---------------------------------------------------
-	let claudeCodeVersion = options.claudeCodeVersion ?? DEFAULT_CLAUDE_CODE_VERSION
+	// The lines come from GHCR, so a Claude Code line the image starts publishing
+	// is offered without a CLI release; the table built into this CLI is only
+	// what an offline machine gets. One read serves the base version below too.
+	const published = await (options.registry ?? publishedTags)()
+	const live = 'tags' in published ? publishedLines(published.tags) : []
+	const lines = live.length > 0 ? live : PUBLISHED_CLAUDE_CODE_VERSIONS
+	const defaultLine = lines.includes(DEFAULT_CLAUDE_CODE_VERSION) ? DEFAULT_CLAUDE_CODE_VERSION : (lines[lines.length - 1] as string)
+	let claudeCodeVersion = options.claudeCodeVersion ?? defaultLine
 	if (options.claudeCodeVersion === undefined && interactive) {
 		const index = await choose(context, {
 			question: 'Claude Code line',
@@ -350,18 +357,16 @@ async function collectAnswers(wizard: WizardContext): Promise<CollectedAnswers |
 				`The base image is published once per Claude Code version (${DEFAULT_BASE_VERSION}-cc<version>).`,
 				'Change this only to stay on an older Claude Code; BASE_IMAGE in .env is the knob.',
 			],
-			options: PUBLISHED_CLAUDE_CODE_VERSIONS.map((version) => ({
+			options: lines.map((version) => ({
 				label: version,
-				hint: version === DEFAULT_CLAUDE_CODE_VERSION ? '(current)' : '',
+				hint: version === defaultLine ? '(current)' : '',
 			})),
-			defaultIndex: Math.max(0, PUBLISHED_CLAUDE_CODE_VERSIONS.indexOf(DEFAULT_CLAUDE_CODE_VERSION)),
+			defaultIndex: lines.indexOf(defaultLine),
 		})
-		claudeCodeVersion = PUBLISHED_CLAUDE_CODE_VERSIONS[index] as string
+		claudeCodeVersion = lines[index] as string
 	}
-	if (!PUBLISHED_CLAUDE_CODE_VERSIONS.includes(claudeCodeVersion)) {
-		say(
-			`  ⚠ ${claudeCodeVersion} is not a published line (${PUBLISHED_CLAUDE_CODE_VERSIONS.join(', ')}) — the image pull may fail.`,
-		)
+	if (live.length === 0 && !lines.includes(claudeCodeVersion)) {
+		say(`  ⚠ ${claudeCodeVersion} is not a published line (${lines.join(', ')}) — the image pull may fail.`)
 	}
 
 	// --- 5b. Base image version ---------------------------------------------
@@ -371,7 +376,16 @@ async function collectAnswers(wizard: WizardContext): Promise<CollectedAnswers |
 	const base: BaseResolution =
 		options.baseVersion !== undefined
 			? { version: options.baseVersion, source: 'flag' }
-			: await (options.resolveBase ?? latestPublishedBase)(claudeCodeVersion)
+			: baseFor(published, claudeCodeVersion)
+	// Judged against GHCR when it answered: a line the newest base dropped can
+	// still have older images, and only a line with none at all fails the pull.
+	if (live.length > 0 && base.source !== 'flag' && !lines.includes(claudeCodeVersion)) {
+		say(
+			base.source === 'ghcr'
+				? `  ⚠ ${claudeCodeVersion} is no longer built (current lines: ${lines.join(', ')}) — pinning its newest image, ${base.version}.`
+				: `  ⚠ ${claudeCodeVersion} is not published on ghcr.io (lines: ${lines.join(', ')}) — the image pull will fail.`,
+		)
+	}
 
 	const answers: ScaffoldAnswers = { projectId, displayName, stack, credsVolume, claudeCodeVersion, baseVersion: base.version }
 

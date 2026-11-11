@@ -10,7 +10,6 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Writable } from 'node:stream'
-import { DEFAULT_BASE_VERSION } from '../src/lib/docker.js'
 import { init, type InitOptions } from '../src/commands/init.js'
 import { readEnvFile } from '../src/lib/env-file.js'
 import { extPatchesConfigPath, readExtPatchesConfig, writeExtPatchesConfig } from '../src/lib/machine-config.js'
@@ -82,7 +81,7 @@ async function runInit(dir: string, overrides: Partial<InitOptions> = {}) {
 		probe: LINUX_PROBE,
 		discover: () => [],
 		// The registry is never reached from a test: the template's pin, as offline.
-		resolveBase: async () => ({ version: DEFAULT_BASE_VERSION, source: 'default', reason: 'test' }),
+		registry: async () => ({ reason: 'test' }),
 		// Nor is api.github.com: a token's repos come from the test, or not at all.
 		listRepos: async () => ({ error: 'test: no GitHub' }),
 		installer: async () => 0,

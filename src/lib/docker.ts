@@ -23,10 +23,9 @@ export const DEFAULT_CLAUDE_CODE_VERSION = '2.1.322'
 export const DEFAULT_BASE_VERSION = '1.17.3'
 
 /**
- * The Claude Code versions the base repo currently publishes an image for —
- * its `cc-versions.json`. A table rather than a closed type so an unlisted
- * value is a warning, not a CLI release: a new pair upstream must not require
- * a new CLI to be scaffolded against.
+ * The Claude Code versions the base repo published an image for when this CLI
+ * was cut — its `cc-versions.json`. Only the offline answer: `devc init` reads
+ * the live lines off ghcr.io, so a new pair upstream needs no CLI release.
  */
 export const PUBLISHED_CLAUDE_CODE_VERSIONS: readonly string[] = ['2.1.310', '2.1.322']
 

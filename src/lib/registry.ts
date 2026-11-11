@@ -82,15 +82,31 @@ export async function publishedTags(
 }
 
 /**
- * Newest published base on `claudeCodeVersion`'s line. Never throws: whatever
- * `publishedTags` could not answer resolves to the template's default, with the
- * reason for the summary line.
+ * The Claude Code lines the newest base is published on, oldest first — the
+ * choice a new project has today. Empty when no tag has the scheme. Pure.
  */
-export async function latestPublishedBase(
-	claudeCodeVersion: string,
-	options: { fetchImpl?: FetchLike; timeoutMs?: number } = {},
-): Promise<BaseResolution> {
-	const published = await publishedTags(options)
+export function publishedLines(tags: readonly string[]): string[] {
+	let newest: number[] | null = null
+	const lines: Record<string, number[][]> = {}
+	for (const tag of tags) {
+		const m = /^(\d+)\.(\d+)\.(\d+)-cc(\d+)\.(\d+)\.(\d+)$/.exec(tag)
+		if (m === null) continue
+		const base = [Number(m[1]), Number(m[2]), Number(m[3])]
+		const cc = [Number(m[4]), Number(m[5]), Number(m[6])]
+		if (newest === null || compare(base, newest) > 0) newest = base
+		const key = base.join('.')
+		;(lines[key] ??= []).push(cc)
+	}
+	if (newest === null) return []
+	return (lines[newest.join('.')] ?? []).sort(compare).map((cc) => cc.join('.'))
+}
+
+/**
+ * Newest published base on `claudeCodeVersion`'s line, from what
+ * `publishedTags` answered. Whatever it could not answer resolves to the
+ * template's default, with the reason for the summary line.
+ */
+export function baseFor(published: { tags: string[] } | { reason: string }, claudeCodeVersion: string): BaseResolution {
 	if ('reason' in published) return fallback(published.reason)
 	const version = newestBase(published.tags, claudeCodeVersion)
 	if (version === null) return fallback(`no published image on the cc${claudeCodeVersion} line`)
